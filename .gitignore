@@ -1,1 +1,8 @@
-*.pyc
+*.py[co]
+*.sw[po]
+.coverage
+pip-log.txt
+.DS_Store
+lxml
+pylibmc
+.gitconfig
