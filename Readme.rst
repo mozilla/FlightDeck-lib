@@ -18,7 +18,7 @@ How FlightDeck-lib was made
 
 ::
 
-    pip install -I --install-option="--home=`pwd`/vendor" --src='vendor/src' -r requirements/dev.txt
+    pip install -I --install-option="--home=`pwd`/vendor" --src='vendor/src' -r requirements/development.txt
 
     # this step wasn't done (yet?)
     # ..delete some junk from vendor/lib/python...
