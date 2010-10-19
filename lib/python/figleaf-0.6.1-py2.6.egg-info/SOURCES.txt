@@ -1,0 +1,13 @@
+README.txt
+figleaf/__init__.py
+figleaf/annotate.py
+figleaf/annotate_cover.py
+figleaf/annotate_html.py
+figleaf/annotate_sections.py
+figleaf/internals.py
+figleaf/nose_sections.py
+figleaf.egg-info/PKG-INFO
+figleaf.egg-info/SOURCES.txt
+figleaf.egg-info/dependency_links.txt
+figleaf.egg-info/entry_points.txt
+figleaf.egg-info/top_level.txt

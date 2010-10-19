@@ -1,0 +1,9 @@
+#!/home/zalun/Environment/flightdeck/bin/python2.6
+# EASY-INSTALL-ENTRY-SCRIPT: 'Sphinx==1.0.4','console_scripts','sphinx-quickstart'
+__requires__ = 'Sphinx==1.0.4'
+import sys
+from pkg_resources import load_entry_point
+
+sys.exit(
+   load_entry_point('Sphinx==1.0.4', 'console_scripts', 'sphinx-quickstart')()
+)

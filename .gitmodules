@@ -1,0 +1,15 @@
+[submodule "src/check"]
+	path = src/check
+	url = git://github.com/jbalogh/check.git
+[submodule "src/django-haystack"]
+	path = src/django-haystack
+	url = git://github.com/toastdriven/django-haystack
+[submodule "src/django-nose"]
+	path = src/django-nose
+	url = git://github.com/jbalogh/django-nose.git
+[submodule "src/python-ecdsa"]
+	path = src/python-ecdsa
+	url = git://github.com/warner/python-ecdsa.git
+[submodule "src/test-utils"]
+	path = src/test-utils
+	url = git://github.com/jbalogh/test-utils.git

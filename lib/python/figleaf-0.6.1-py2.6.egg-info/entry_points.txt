@@ -1,0 +1,10 @@
+[nose.plugins.0.10]
+figleaf-sections = figleaf.nose_sections:FigleafSections
+
+[console_scripts]
+annotate-sections = figleaf.annotate_sections:main
+figleaf2cov = figleaf.annotate_cover:main
+figleaf = figleaf:main
+figleaf2ast = figleaf:display_ast
+figleaf2html = figleaf.annotate_html:main
+

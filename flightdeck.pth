@@ -1,0 +1,6 @@
+src
+src/test-utils
+src/django-nose
+src/check
+src/django-haystack
+src/python-ecdsa
