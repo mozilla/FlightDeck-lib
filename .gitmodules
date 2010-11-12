@@ -13,3 +13,6 @@
 [submodule "src/test-utils"]
 	path = src/test-utils
 	url = git://github.com/jbalogh/test-utils.git
+[submodule "src/commonware"]
+	path = src/commonware
+	url = git://github.com/jsocol/commonware.git
