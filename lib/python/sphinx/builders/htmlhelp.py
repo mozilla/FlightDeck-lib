@@ -6,7 +6,7 @@
     Build HTML help support files.
     Parts adapted from Python's Doc/tools/prechm.py.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -57,7 +57,7 @@ from sphinx.builders.html import StandaloneHTMLBuilder
 
 project_template = '''\
 [OPTIONS]
-Binary TOC=No
+Binary TOC=Yes
 Binary Index=No
 Compiled file=%(outname)s.chm
 Contents file=%(outname)s.hhc
@@ -200,7 +200,7 @@ class HTMLHelpBuilder(StandaloneHTMLBuilder):
                 outdir += os.sep
             olen = len(outdir)
             for root, dirs, files in os.walk(outdir):
-                staticdir = root.startswith(path.join(outdir, '_static'))
+                staticdir = (root == path.join(outdir, '_static'))
                 for fn in files:
                     if (staticdir and not fn.endswith('.js')) or \
                            fn.endswith('.html'):
@@ -216,9 +216,9 @@ class HTMLHelpBuilder(StandaloneHTMLBuilder):
             # special books
             f.write('<LI> ' + object_sitemap % (self.config.html_short_title,
                                                 'index.html'))
-            for indexname, indexcls, content, collapse in self.domain_indices:
-                f.write('<LI> ' + object_sitemap % (indexcls.localname,
-                                                    '%s.html' % indexname))
+            if self.config.html_use_modindex:
+                f.write('<LI> ' + object_sitemap % (_('Global Module Index'),
+                                                    'modindex.html'))
             # the TOC
             tocdoc = self.env.get_and_resolve_doctree(
                 self.config.master_doc, self, prune_toctrees=False)

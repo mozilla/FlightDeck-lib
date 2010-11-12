@@ -5,7 +5,7 @@
 
     Quickly setup documentation source to work with Sphinx.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -14,8 +14,7 @@ from os import path
 
 TERM_ENCODING = getattr(sys.stdin, 'encoding', None)
 
-from sphinx import __version__
-from sphinx.util.osutil import make_filename
+from sphinx.util import make_filename
 from sphinx.util.console import purple, bold, red, turquoise, \
      nocolor, color_terminal
 from sphinx.util import texescape
@@ -42,12 +41,9 @@ import sys, os
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#sys.path.insert(0, os.path.abspath('.'))
+#sys.path.append(os.path.abspath('.'))
 
 # -- General configuration -----------------------------------------------------
-
-# If your documentation needs a minimal Sphinx version, state it here.
-#needs_sphinx = '1.0'
 
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
@@ -60,7 +56,7 @@ templates_path = ['%(dot)stemplates']
 source_suffix = '%(suffix)s'
 
 # The encoding of source files.
-#source_encoding = 'utf-8-sig'
+#source_encoding = 'utf-8'
 
 # The master toctree document.
 master_doc = '%(master_str)s'
@@ -88,9 +84,12 @@ release = '%(release_str)s'
 # Else, today_fmt is used as the format for a strftime call.
 #today_fmt = '%%B %%d, %%Y'
 
-# List of patterns, relative to source directory, that match files and
-# directories to ignore when looking for source files.
-exclude_patterns = [%(exclude_patterns)s]
+# List of documents that shouldn't be included in the build.
+#unused_docs = []
+
+# List of directories, relative to source directory, that shouldn't be searched
+# for source files.
+exclude_trees = [%(exclude_trees)s]
 
 # The reST default role (used for this markup: `text`) to use for all documents.
 #default_role = None
@@ -115,8 +114,8 @@ pygments_style = 'sphinx'
 
 # -- Options for HTML output ---------------------------------------------------
 
-# The theme to use for HTML and HTML Help pages.  See the documentation for
-# a list of builtin themes.
+# The theme to use for HTML and HTML Help pages.  Major themes that come with
+# Sphinx are currently 'default' and 'sphinxdoc'.
 html_theme = 'default'
 
 # Theme options are theme-specific and customize the look and feel of a theme
@@ -164,7 +163,7 @@ html_static_path = ['%(dot)sstatic']
 #html_additional_pages = {}
 
 # If false, no module index is generated.
-#html_domain_indices = True
+#html_use_modindex = True
 
 # If false, no index is generated.
 #html_use_index = True
@@ -175,19 +174,13 @@ html_static_path = ['%(dot)sstatic']
 # If true, links to the reST sources are added to the pages.
 #html_show_sourcelink = True
 
-# If true, "Created using Sphinx" is shown in the HTML footer. Default is True.
-#html_show_sphinx = True
-
-# If true, "(C) Copyright ..." is shown in the HTML footer. Default is True.
-#html_show_copyright = True
-
 # If true, an OpenSearch description file will be output, and all pages will
 # contain a <link> tag referring to it.  The value of this option must be the
 # base URL from which the finished HTML is served.
 #html_use_opensearch = ''
 
-# This is the file name suffix for HTML files (e.g. ".xhtml").
-#html_file_suffix = None
+# If nonempty, this is the file name suffix for HTML files (e.g. ".xhtml").
+#html_file_suffix = ''
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = '%(project_fn)sdoc'
@@ -216,12 +209,6 @@ latex_documents = [
 # not chapters.
 #latex_use_parts = False
 
-# If true, show page references after internal links.
-#latex_show_pagerefs = False
-
-# If true, show URL addresses after external links.
-#latex_show_urls = False
-
 # Additional stuff for the LaTeX preamble.
 #latex_preamble = ''
 
@@ -229,59 +216,7 @@ latex_documents = [
 #latex_appendices = []
 
 # If false, no module index is generated.
-#latex_domain_indices = True
-
-
-# -- Options for manual page output --------------------------------------------
-
-# One entry per manual page. List of tuples
-# (source start file, name, description, authors, manual section).
-man_pages = [
-    ('%(master_str)s', '%(project_manpage)s', u'%(project_doc)s',
-     [u'%(author_str)s'], 1)
-]
-'''
-
-EPUB_CONFIG = '''
-
-# -- Options for Epub output ---------------------------------------------------
-
-# Bibliographic Dublin Core info.
-epub_title = u'%(project_str)s'
-epub_author = u'%(author_str)s'
-epub_publisher = u'%(author_str)s'
-epub_copyright = u'%(copyright_str)s'
-
-# The language of the text. It defaults to the language option
-# or en if the language is not set.
-#epub_language = ''
-
-# The scheme of the identifier. Typical schemes are ISBN or URL.
-#epub_scheme = ''
-
-# The unique identifier of the text. This can be a ISBN number
-# or the project homepage.
-#epub_identifier = ''
-
-# A unique identification for the text.
-#epub_uid = ''
-
-# HTML files that should be inserted before the pages created by sphinx.
-# The format is a list of tuples containing the path and title.
-#epub_pre_files = []
-
-# HTML files shat should be inserted after the pages created by sphinx.
-# The format is a list of tuples containing the path and title.
-#epub_post_files = []
-
-# A list of files that should not be packed into the epub file.
-#epub_exclude_files = []
-
-# The depth of the table of contents in toc.ncx.
-#epub_tocdepth = 3
-
-# Allow duplicate toc entries.
-#epub_tocdup = True
+#latex_use_modindex = True
 '''
 
 INTERSPHINX_CONFIG = '''
@@ -329,27 +264,21 @@ PAPEROPT_letter = -D latex_paper_size=letter
 ALLSPHINXOPTS   = -d $(BUILDDIR)/doctrees $(PAPEROPT_$(PAPER)) \
 $(SPHINXOPTS) %(rsrcdir)s
 
-.PHONY: help clean html dirhtml singlehtml pickle json htmlhelp qthelp devhelp \
-epub latex latexpdf text man changes linkcheck doctest
+.PHONY: help clean html dirhtml pickle json htmlhelp qthelp latex changes \
+linkcheck doctest
 
 help:
 \t@echo "Please use \\`make <target>' where <target> is one of"
-\t@echo "  html       to make standalone HTML files"
-\t@echo "  dirhtml    to make HTML files named index.html in directories"
-\t@echo "  singlehtml to make a single large HTML file"
-\t@echo "  pickle     to make pickle files"
-\t@echo "  json       to make JSON files"
-\t@echo "  htmlhelp   to make HTML files and a HTML help project"
-\t@echo "  qthelp     to make HTML files and a qthelp project"
-\t@echo "  devhelp    to make HTML files and a Devhelp project"
-\t@echo "  epub       to make an epub"
-\t@echo "  latex      to make LaTeX files, you can set PAPER=a4 or PAPER=letter"
-\t@echo "  latexpdf   to make LaTeX files and run them through pdflatex"
-\t@echo "  text       to make text files"
-\t@echo "  man        to make manual pages"
-\t@echo "  changes    to make an overview of all changed/added/deprecated items"
-\t@echo "  linkcheck  to check all external links for integrity"
-\t@echo "  doctest    to run all doctests embedded in the documentation \
+\t@echo "  html      to make standalone HTML files"
+\t@echo "  dirhtml   to make HTML files named index.html in directories"
+\t@echo "  pickle    to make pickle files"
+\t@echo "  json      to make JSON files"
+\t@echo "  htmlhelp  to make HTML files and a HTML help project"
+\t@echo "  qthelp    to make HTML files and a qthelp project"
+\t@echo "  latex     to make LaTeX files, you can set PAPER=a4 or PAPER=letter"
+\t@echo "  changes   to make an overview of all changed/added/deprecated items"
+\t@echo "  linkcheck to check all external links for integrity"
+\t@echo "  doctest   to run all doctests embedded in the documentation \
 (if enabled)"
 
 clean:
@@ -364,11 +293,6 @@ dirhtml:
 \t$(SPHINXBUILD) -b dirhtml $(ALLSPHINXOPTS) $(BUILDDIR)/dirhtml
 \t@echo
 \t@echo "Build finished. The HTML pages are in $(BUILDDIR)/dirhtml."
-
-singlehtml:
-\t$(SPHINXBUILD) -b singlehtml $(ALLSPHINXOPTS) $(BUILDDIR)/singlehtml
-\t@echo
-\t@echo "Build finished. The HTML page is in $(BUILDDIR)/singlehtml."
 
 pickle:
 \t$(SPHINXBUILD) -b pickle $(ALLSPHINXOPTS) $(BUILDDIR)/pickle
@@ -395,43 +319,12 @@ qthelp:
 \t@echo "To view the help file:"
 \t@echo "# assistant -collectionFile $(BUILDDIR)/qthelp/%(project_fn)s.qhc"
 
-devhelp:
-\t$(SPHINXBUILD) -b devhelp $(ALLSPHINXOPTS) $(BUILDDIR)/devhelp
-\t@echo
-\t@echo "Build finished."
-\t@echo "To view the help file:"
-\t@echo "# mkdir -p $$HOME/.local/share/devhelp/%(project_fn)s"
-\t@echo "# ln -s $(BUILDDIR)/devhelp\
- $$HOME/.local/share/devhelp/%(project_fn)s"
-\t@echo "# devhelp"
-
-epub:
-\t$(SPHINXBUILD) -b epub $(ALLSPHINXOPTS) $(BUILDDIR)/epub
-\t@echo
-\t@echo "Build finished. The epub file is in $(BUILDDIR)/epub."
-
 latex:
 \t$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(BUILDDIR)/latex
 \t@echo
 \t@echo "Build finished; the LaTeX files are in $(BUILDDIR)/latex."
-\t@echo "Run \\`make' in that directory to run these through (pdf)latex" \\
-\t      "(use \\`make latexpdf' here to do that automatically)."
-
-latexpdf:
-\t$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(BUILDDIR)/latex
-\t@echo "Running LaTeX files through pdflatex..."
-\tmake -C $(BUILDDIR)/latex all-pdf
-\t@echo "pdflatex finished; the PDF files are in $(BUILDDIR)/latex."
-
-text:
-\t$(SPHINXBUILD) -b text $(ALLSPHINXOPTS) $(BUILDDIR)/text
-\t@echo
-\t@echo "Build finished. The text files are in $(BUILDDIR)/text."
-
-man:
-\t$(SPHINXBUILD) -b man $(ALLSPHINXOPTS) $(BUILDDIR)/man
-\t@echo
-\t@echo "Build finished. The manual pages are in $(BUILDDIR)/man."
+\t@echo "Run \\`make all-pdf' or \\`make all-ps' in that directory to" \\
+\t      "run these through (pdf)latex."
 
 changes:
 \t$(SPHINXBUILD) -b changes $(ALLSPHINXOPTS) $(BUILDDIR)/changes
@@ -455,9 +348,7 @@ BATCHFILE = '''\
 
 REM Command file for Sphinx documentation
 
-if "%%SPHINXBUILD%%" == "" (
-\tset SPHINXBUILD=sphinx-build
-)
+set SPHINXBUILD=sphinx-build
 set BUILDDIR=%(rbuilddir)s
 set ALLSPHINXOPTS=-d %%BUILDDIR%%/doctrees %%SPHINXOPTS%% %(rsrcdir)s
 if NOT "%%PAPER%%" == "" (
@@ -469,21 +360,16 @@ if "%%1" == "" goto help
 if "%%1" == "help" (
 \t:help
 \techo.Please use `make ^<target^>` where ^<target^> is one of
-\techo.  html       to make standalone HTML files
-\techo.  dirhtml    to make HTML files named index.html in directories
-\techo.  singlehtml to make a single large HTML file
-\techo.  pickle     to make pickle files
-\techo.  json       to make JSON files
-\techo.  htmlhelp   to make HTML files and a HTML help project
-\techo.  qthelp     to make HTML files and a qthelp project
-\techo.  devhelp    to make HTML files and a Devhelp project
-\techo.  epub       to make an epub
-\techo.  latex      to make LaTeX files, you can set PAPER=a4 or PAPER=letter
-\techo.  text       to make text files
-\techo.  man        to make manual pages
-\techo.  changes    to make an overview over all changed/added/deprecated items
-\techo.  linkcheck  to check all external links for integrity
-\techo.  doctest    to run all doctests embedded in the documentation if enabled
+\techo.  html      to make standalone HTML files
+\techo.  dirhtml   to make HTML files named index.html in directories
+\techo.  pickle    to make pickle files
+\techo.  json      to make JSON files
+\techo.  htmlhelp  to make HTML files and a HTML help project
+\techo.  qthelp    to make HTML files and a qthelp project
+\techo.  latex     to make LaTeX files, you can set PAPER=a4 or PAPER=letter
+\techo.  changes   to make an overview over all changed/added/deprecated items
+\techo.  linkcheck to check all external links for integrity
+\techo.  doctest   to run all doctests embedded in the documentation if enabled
 \tgoto end
 )
 
@@ -504,13 +390,6 @@ if "%%1" == "dirhtml" (
 \t%%SPHINXBUILD%% -b dirhtml %%ALLSPHINXOPTS%% %%BUILDDIR%%/dirhtml
 \techo.
 \techo.Build finished. The HTML pages are in %%BUILDDIR%%/dirhtml.
-\tgoto end
-)
-
-if "%%1" == "singlehtml" (
-\t%%SPHINXBUILD%% -b singlehtml %%ALLSPHINXOPTS%% %%BUILDDIR%%/singlehtml
-\techo.
-\techo.Build finished. The HTML pages are in %%BUILDDIR%%/singlehtml.
 \tgoto end
 )
 
@@ -547,38 +426,10 @@ if "%%1" == "qthelp" (
 \tgoto end
 )
 
-if "%%1" == "devhelp" (
-\t%%SPHINXBUILD%% -b devhelp %%ALLSPHINXOPTS%% %%BUILDDIR%%/devhelp
-\techo.
-\techo.Build finished.
-\tgoto end
-)
-
-if "%%1" == "epub" (
-\t%%SPHINXBUILD%% -b epub %%ALLSPHINXOPTS%% %%BUILDDIR%%/epub
-\techo.
-\techo.Build finished. The epub file is in %%BUILDDIR%%/epub.
-\tgoto end
-)
-
 if "%%1" == "latex" (
 \t%%SPHINXBUILD%% -b latex %%ALLSPHINXOPTS%% %%BUILDDIR%%/latex
 \techo.
 \techo.Build finished; the LaTeX files are in %%BUILDDIR%%/latex.
-\tgoto end
-)
-
-if "%%1" == "text" (
-\t%%SPHINXBUILD%% -b text %%ALLSPHINXOPTS%% %%BUILDDIR%%/text
-\techo.
-\techo.Build finished. The text files are in %%BUILDDIR%%/text.
-\tgoto end
-)
-
-if "%%1" == "man" (
-\t%%SPHINXBUILD%% -b man %%ALLSPHINXOPTS%% %%BUILDDIR%%/man
-\techo.
-\techo.Build finished. The manual pages are in %%BUILDDIR%%/man.
 \tgoto end
 )
 
@@ -686,7 +537,7 @@ def inner_main(args):
     if not color_terminal():
         nocolor()
 
-    print bold('Welcome to the Sphinx %s quickstart utility.') % __version__
+    print bold('Welcome to the Sphinx quickstart utility.')
     print '''
 Please enter values for the following settings (just press Enter to
 accept a default value, if one is given in brackets).'''
@@ -755,11 +606,6 @@ document is a custom template, you can also set this to another filename.'''
                   'existing file and press Enter', d['master'])
 
     print '''
-Sphinx can also add configuration for epub output:'''
-    do_prompt(d, 'epub', 'Do you want to use the epub builder (y/N)',
-              'n', boolean)
-
-    print '''
 Please indicate if you want to use one of the following Sphinx extensions:'''
     do_prompt(d, 'ext_autodoc', 'autodoc: automatically insert docstrings '
               'from modules (y/N)', 'n', boolean)
@@ -780,8 +626,6 @@ Please indicate if you want to use one of the following Sphinx extensions:'''
 pngmath has been deselected.'''
     do_prompt(d, 'ext_ifconfig', 'ifconfig: conditional inclusion of '
               'content based on config values (y/N)', 'n', boolean)
-    do_prompt(d, 'ext_viewcode', 'viewcode: include links to the source code '
-              'of documented Python objects (y/N)', 'n', boolean)
     print '''
 A Makefile and a Windows command file can be generated for you so that you
 only have to run e.g. `make html' instead of invoking sphinx-build
@@ -791,13 +635,12 @@ directly.'''
               'y', boolean)
 
     d['project_fn'] = make_filename(d['project'])
-    d['project_manpage'] = d['project_fn'].lower()
     d['now'] = time.asctime()
     d['underline'] = len(d['project']) * '='
     d['extensions'] = ', '.join(
         repr('sphinx.ext.' + name)
         for name in ('autodoc', 'doctest', 'intersphinx', 'todo', 'coverage',
-                     'pngmath', 'jsmath', 'ifconfig', 'viewcode')
+                     'pngmath', 'jsmath', 'ifconfig')
         if d['ext_' + name])
     d['copyright'] = time.strftime('%Y') + ', ' + d['author']
     d['author_texescaped'] = unicode(d['author']).\
@@ -808,7 +651,7 @@ directly.'''
 
     # escape backslashes and single quotes in strings that are put into
     # a Python string literal
-    for key in ('project', 'copyright', 'author', 'author_texescaped',
+    for key in ('project', 'copyright', 'author_texescaped',
                 'project_doc_texescaped', 'version', 'release', 'master'):
         d[key + '_str'] = d[key].replace('\\', '\\\\').replace("'", "\\'")
 
@@ -820,17 +663,15 @@ directly.'''
     mkdir_p(srcdir)
     if d['sep']:
         builddir = path.join(d['path'], 'build')
-        d['exclude_patterns'] = ''
+        d['exclude_trees'] = ''
     else:
         builddir = path.join(srcdir, d['dot'] + 'build')
-        d['exclude_patterns'] = repr(d['dot'] + 'build')
+        d['exclude_trees'] = repr(d['dot'] + 'build')
     mkdir_p(builddir)
     mkdir_p(path.join(srcdir, d['dot'] + 'templates'))
     mkdir_p(path.join(srcdir, d['dot'] + 'static'))
 
     conf_text = QUICKSTART_CONF % d
-    if d['epub']:
-        conf_text += EPUB_CONFIG % d
     if d['ext_intersphinx']:
         conf_text += INTERSPHINX_CONFIG
 
@@ -846,8 +687,7 @@ directly.'''
     if d['makefile']:
         d['rsrcdir'] = d['sep'] and 'source' or '.'
         d['rbuilddir'] = d['sep'] and 'build' or d['dot'] + 'build'
-        # use binary mode, to avoid writing \r\n on Windows
-        f = open(path.join(d['path'], 'Makefile'), 'wb')
+        f = open(path.join(d['path'], 'Makefile'), 'w')
         f.write((MAKEFILE % d).encode('utf-8'))
         f.close()
 

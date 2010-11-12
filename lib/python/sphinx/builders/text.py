@@ -5,7 +5,7 @@
 
     Plain-text Sphinx builder.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -14,8 +14,8 @@ from os import path
 
 from docutils.io import StringOutput
 
+from sphinx.util import ensuredir, os_path
 from sphinx.builders import Builder
-from sphinx.util.osutil import ensuredir, os_path
 from sphinx.writers.text import TextWriter
 
 

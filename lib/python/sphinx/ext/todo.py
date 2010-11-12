@@ -8,13 +8,12 @@
     all todos of your project and lists them along with a backlink to the
     original location.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
 from docutils import nodes
 
-from sphinx.locale import _
 from sphinx.environment import NoUri
 from sphinx.util.compat import Directive, make_admonition
 
@@ -35,36 +34,27 @@ class Todo(Directive):
 
     def run(self):
         env = self.state.document.settings.env
-        targetid = 'index-%s' % env.new_serialno('index')
+
+        targetid = "todo-%s" % env.index_num
+        env.index_num += 1
         targetnode = nodes.target('', '', ids=[targetid])
 
         ad = make_admonition(todo_node, self.name, [_('Todo')], self.options,
                              self.content, self.lineno, self.content_offset,
                              self.block_text, self.state, self.state_machine)
-        ad[0].line = self.lineno
-        return [targetnode] + ad
 
-
-def process_todos(app, doctree):
-    # collect all todos in the environment
-    # this is not done in the directive itself because it some transformations
-    # must have already been run, e.g. substitutions
-    env = app.builder.env
-    if not hasattr(env, 'todo_all_todos'):
-        env.todo_all_todos = []
-    for node in doctree.traverse(todo_node):
-        try:
-            targetnode = node.parent[node.parent.index(node) - 1]
-            if not isinstance(targetnode, nodes.target):
-                raise IndexError
-        except IndexError:
-            targetnode = None
+        # Attach a list of all todos to the environment,
+        # the todolist works with the collected todo nodes
+        if not hasattr(env, 'todo_all_todos'):
+            env.todo_all_todos = []
         env.todo_all_todos.append({
             'docname': env.docname,
-            'lineno': node.line,
-            'todo': node.deepcopy(),
+            'lineno': self.lineno,
+            'todo': ad[0].deepcopy(),
             'target': targetnode,
         })
+
+        return [targetnode] + ad
 
 
 class TodoList(Directive):
@@ -104,17 +94,17 @@ def process_todo_nodes(app, doctree, fromdocname):
         content = []
 
         for todo_info in env.todo_all_todos:
-            para = nodes.paragraph(classes=['todo-source'])
+            para = nodes.paragraph()
             filename = env.doc2path(todo_info['docname'], base=None)
-            description = _('(The <<original entry>> is located in '
-                            ' %s, line %d.)') % (filename, todo_info['lineno'])
-            desc1 = description[:description.find('<<')]
-            desc2 = description[description.find('>>')+2:]
-            para += nodes.Text(desc1, desc1)
+            description = (
+                _('(The original entry is located in %s, line %d and '
+                  'can be found ') % (filename, todo_info['lineno']))
+            para += nodes.Text(description, description)
 
             # Create a reference
-            newnode = nodes.reference('', '', internal=True)
-            innernode = nodes.emphasis(_('original entry'), _('original entry'))
+            newnode = nodes.reference('', '')
+            innernode = nodes.emphasis(_('here'), _('here'))
+            newnode['refdocname'] = todo_info['docname']
             try:
                 newnode['refuri'] = app.builder.get_relative_uri(
                     fromdocname, todo_info['docname'])
@@ -124,7 +114,7 @@ def process_todo_nodes(app, doctree, fromdocname):
                 pass
             newnode.append(innernode)
             para += newnode
-            para += nodes.Text(desc2, desc2)
+            para += nodes.Text('.)', '.)')
 
             # (Recursively) resolve references in the todo content
             todo_entry = todo_info['todo']
@@ -158,12 +148,10 @@ def setup(app):
     app.add_node(todo_node,
                  html=(visit_todo_node, depart_todo_node),
                  latex=(visit_todo_node, depart_todo_node),
-                 text=(visit_todo_node, depart_todo_node),
-                 man=(visit_todo_node, depart_todo_node))
+                 text=(visit_todo_node, depart_todo_node))
 
     app.add_directive('todo', Todo)
     app.add_directive('todolist', TodoList)
-    app.connect('doctree-read', process_todos)
     app.connect('doctree-resolved', process_todo_nodes)
     app.connect('env-purge-doc', purge_todos)
 

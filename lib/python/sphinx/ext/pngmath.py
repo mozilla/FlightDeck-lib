@@ -5,12 +5,11 @@
 
     Render math in HTML via dvipng.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
 import re
-import codecs
 import shutil
 import tempfile
 import posixpath
@@ -24,9 +23,9 @@ except ImportError:
 from docutils import nodes
 
 from sphinx.errors import SphinxError
+from sphinx.util import ensuredir
 from sphinx.util.png import read_png_depth, write_png_depth
-from sphinx.util.osutil import ensuredir, ENOENT
-from sphinx.ext.mathbase import setup_math as mathbase_setup, wrap_displaymath
+from sphinx.ext.mathbase import setup as mathbase_setup, wrap_displaymath
 
 class MathExtError(SphinxError):
     category = 'Math extension error'
@@ -34,7 +33,7 @@ class MathExtError(SphinxError):
 
 DOC_HEAD = r'''
 \documentclass[12pt]{article}
-\usepackage[utf8x]{inputenc}
+\usepackage[utf8]{inputenc}
 \usepackage{amsmath}
 \usepackage{amsthm}
 \usepackage{amssymb}
@@ -90,6 +89,8 @@ def render_math(self, math):
 
     latex = DOC_HEAD + self.builder.config.pngmath_latex_preamble
     latex += (use_preview and DOC_BODY_PREVIEW or DOC_BODY) % math
+    if isinstance(latex, unicode):
+        latex = latex.encode('utf-8')
 
     # use only one tempdir per build -- the use of a directory is cleaner
     # than using temporary files, since we can clean up everything at once
@@ -99,7 +100,7 @@ def render_math(self, math):
     else:
         tempdir = self.builder._mathpng_tempdir
 
-    tf = codecs.open(path.join(tempdir, 'math.tex'), 'w', 'utf-8')
+    tf = open(path.join(tempdir, 'math.tex'), 'w')
     tf.write(latex)
     tf.close()
 
@@ -118,7 +119,7 @@ def render_math(self, math):
         try:
             p = Popen(ltx_args, stdout=PIPE, stderr=PIPE)
         except OSError, err:
-            if err.errno != ENOENT:   # No such file or directory
+            if err.errno != 2:   # No such file or directory
                 raise
             self.builder.warn('LaTeX command %r cannot be run (needed for math '
                               'display), check the pngmath_latex setting' %
@@ -146,7 +147,7 @@ def render_math(self, math):
     try:
         p = Popen(dvipng_args, stdout=PIPE, stderr=PIPE)
     except OSError, err:
-        if err.errno != ENOENT:   # No such file or directory
+        if err.errno != 2:   # No such file or directory
             raise
         self.builder.warn('dvipng command %r cannot be run (needed for math '
                           'display), check the pngmath_dvipng setting' %
@@ -182,8 +183,7 @@ def html_visit_math(self, node):
     try:
         fname, depth = render_math(self, '$'+node['latex']+'$')
     except MathExtError, exc:
-        msg = unicode(str(exc), 'utf-8', 'replace')
-        sm = nodes.system_message(msg, type='WARNING', level=2,
+        sm = nodes.system_message(str(exc), type='WARNING', level=2,
                                   backrefs=[], source=node['latex'])
         sm.walkabout(self)
         self.builder.warn('display latex %r: ' % node['latex'] + str(exc))

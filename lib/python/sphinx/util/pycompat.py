@@ -5,31 +5,13 @@
 
     Stuff for Python version compatibility.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
 import sys
 import codecs
 import encodings
-
-
-try:
-    any = any
-    all = all
-except NameError:
-    def all(gen):
-        for i in gen:
-            if not i:
-                return False
-        return True
-
-    def any(gen):
-        for i in gen:
-            if i:
-                return True
-        return False
-
 
 if sys.version_info < (2, 5):
     # Python 2.4 doesn't know the utf-8-sig encoding, so deliver it here

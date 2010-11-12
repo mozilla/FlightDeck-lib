@@ -6,7 +6,7 @@
     Mimic doctest by automatically executing code snippets and checking
     their results.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -196,8 +196,6 @@ class DocTestBuilder(Builder):
         # that code nevertheless, we monkey-patch the "compile" it uses.
         doctest.compile = self.compile
 
-        sys.path[0:0] = self.config.doctest_path
-
         self.type = 'single'
 
         self.total_failures = 0
@@ -247,6 +245,8 @@ Doctest summary
 
         if self.total_failures or self.setup_failures:
             self.app.statuscode = 1
+
+        sys.path[0:0] = self.config.doctest_path
 
     def write(self, build_docnames, updated_docnames, method='update'):
         if build_docnames is None:
@@ -355,14 +355,7 @@ Doctest summary
                 options = code[1] and code[1].options or {}
                 # disable <BLANKLINE> processing as it is not needed
                 options[doctest.DONT_ACCEPT_BLANKLINE] = True
-                # find out if we're testing an exception
-                m = parser._EXCEPTION_RE.match(output)
-                if m:
-                    exc_msg = m.group('msg')
-                else:
-                    exc_msg = None
                 example = doctest.Example(code[0].code, output,
-                                          exc_msg=exc_msg,
                                           lineno=code[0].lineno,
                                           options=options)
                 test = doctest.DocTest([example], {}, group.name,

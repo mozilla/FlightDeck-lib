@@ -5,7 +5,7 @@
 
     Glue code for the jinja2 templating engine.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -17,8 +17,8 @@ from jinja2 import FileSystemLoader, BaseLoader, TemplateNotFound, \
 from jinja2.utils import open_if_exists
 from jinja2.sandbox import SandboxedEnvironment
 
+from sphinx.util import mtimes_of_files
 from sphinx.application import TemplateBridge
-from sphinx.util.osutil import mtimes_of_files
 
 
 def _tobool(val):
@@ -30,7 +30,7 @@ def accesskey(context, key):
     """Helper to output each access key only once."""
     if '_accesskeys' not in context:
         context.vars['_accesskeys'] = {}
-    if key and key not in context.vars['_accesskeys']:
+    if key not in context.vars['_accesskeys']:
         context.vars['_accesskeys'][key] = 1
         return 'accesskey="%s"' % key
     return ''
@@ -93,7 +93,7 @@ class BuiltinTemplateLoader(TemplateBridge, BaseLoader):
         # make the paths into loaders
         self.loaders = map(SphinxFileSystemLoader, chain)
 
-        use_i18n = builder.app.translator is not None
+        use_i18n = builder.translator is not None
         extensions = use_i18n and ['jinja2.ext.i18n'] or []
         self.environment = SandboxedEnvironment(loader=self,
                                                 extensions=extensions)
@@ -101,8 +101,7 @@ class BuiltinTemplateLoader(TemplateBridge, BaseLoader):
         self.environment.globals['debug'] = contextfunction(pformat)
         self.environment.globals['accesskey'] = contextfunction(accesskey)
         if use_i18n:
-            self.environment.install_gettext_translations(
-                builder.app.translator)
+            self.environment.install_gettext_translations(builder.translator)
 
     def render(self, template, context):
         return self.environment.get_template(template).render(context)

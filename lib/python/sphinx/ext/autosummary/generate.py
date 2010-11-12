@@ -14,295 +14,225 @@
        generate:
                sphinx-autogen source/*.rst source/generated
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 import os
 import re
 import sys
-import pydoc
-import optparse
+import getopt
+import inspect
 
-from jinja2 import FileSystemLoader, TemplateNotFound
-from jinja2.sandbox import SandboxedEnvironment
+from jinja2 import Environment, PackageLoader
 
-from sphinx.ext.autosummary import import_by_name, get_documenter
-from sphinx.jinja2glue import BuiltinTemplateLoader
-from sphinx.util.osutil import ensuredir
+from sphinx.ext.autosummary import import_by_name
+from sphinx.util import ensuredir
 
-def main(argv=sys.argv):
-    usage = """%prog [OPTIONS] SOURCEFILE ..."""
-    p = optparse.OptionParser(usage.strip())
-    p.add_option("-o", "--output-dir", action="store", type="string",
-                 dest="output_dir", default=None,
-                 help="Directory to place all output in")
-    p.add_option("-s", "--suffix", action="store", type="string",
-                 dest="suffix", default="rst",
-                 help="Default suffix for files (default: %default)")
-    p.add_option("-t", "--templates", action="store", type="string",
-                 dest="templates", default=None,
-                 help="Custom template directory (default: %default)")
-    options, args = p.parse_args(argv[1:])
+# create our own templating environment, for module template only
+env = Environment(loader=PackageLoader('sphinx.ext.autosummary', 'templates'))
 
-    if len(args) < 1:
-        p.error('no input files given')
-
-    generate_autosummary_docs(args, options.output_dir,
-                              "." + options.suffix,
-                              template_dir=options.templates)
 
 def _simple_info(msg):
     print msg
 
 def _simple_warn(msg):
-    print >> sys.stderr, 'WARNING: ' + msg
+    print >>sys.stderr, 'WARNING: ' + msg
 
-# -- Generating output ---------------------------------------------------------
-
-def generate_autosummary_docs(sources, output_dir=None, suffix='.rst',
-                              warn=_simple_warn, info=_simple_info,
-                              base_path=None, builder=None, template_dir=None):
-
-    showed_sources = list(sorted(sources))
-    if len(showed_sources) > 20:
-        showed_sources = showed_sources[:10] + ['...'] + showed_sources[-10:]
-    info('[autosummary] generating autosummary for: %s' %
-         ', '.join(showed_sources))
-
+def generate_autosummary_docs(sources, output_dir=None, suffix=None,
+                              warn=_simple_warn, info=_simple_info):
+    info('generating autosummary for: %s' % ', '.join(sources))
     if output_dir:
-        info('[autosummary] writing to %s' % output_dir)
-
-    if base_path is not None:
-        sources = [os.path.join(base_path, filename) for filename in sources]
-
-    # create our own templating environment
-    template_dirs = [os.path.join(os.path.dirname(__file__), 'templates')]
-    if builder is not None:
-        # allow the user to override the templates
-        template_loader = BuiltinTemplateLoader()
-        template_loader.init(builder, dirs=template_dirs)
-    else:
-        if template_dir:
-            template_dirs.insert(0, template_dir)
-        template_loader = FileSystemLoader(template_dirs)
-    template_env = SandboxedEnvironment(loader=template_loader)
-
+        info('writing to %s' % output_dir)
     # read
-    items = find_autosummary_in_files(sources)
-
-    # remove possible duplicates
-    items = dict([(item, True) for item in items]).keys()
-
-    # keep track of new files
-    new_files = []
+    names = {}
+    for name, loc in get_documented(sources).items():
+        for (filename, sec_title, keyword, toctree) in loc:
+            if toctree is not None:
+                path = os.path.join(os.path.dirname(filename), toctree)
+                names[name] = os.path.abspath(path)
 
     # write
-    for name, path, template_name in sorted(items):
-        if path is None:
-            # The corresponding autosummary:: directive did not have
-            # a :toctree: option
-            continue
-
-        path = output_dir or os.path.abspath(path)
+    for name, path in sorted(names.items()):
+        path = output_dir or path
         ensuredir(path)
 
         try:
             obj, name = import_by_name(name)
         except ImportError, e:
-            warn('[autosummary] failed to import %r: %s' % (name, e))
+            warn('failed to import %r: %s' % (name, e))
             continue
 
-        fn = os.path.join(path, name + suffix)
-
+        fn = os.path.join(path, name + (suffix or '.rst'))
         # skip it if it exists
         if os.path.isfile(fn):
             continue
 
-        new_files.append(fn)
-
         f = open(fn, 'w')
 
         try:
-            doc = get_documenter(obj)
-
-            if template_name is not None:
-                template = template_env.get_template(template_name)
+            if inspect.ismodule(obj):
+                # XXX replace this with autodoc's API?
+                tmpl = env.get_template('module')
+                functions = [getattr(obj, item).__name__
+                             for item in dir(obj)
+                             if inspect.isfunction(getattr(obj, item))]
+                classes = [getattr(obj, item).__name__
+                           for item in dir(obj)
+                           if inspect.isclass(getattr(obj, item))
+                           and not issubclass(getattr(obj, item), Exception)]
+                exceptions = [getattr(obj, item).__name__
+                              for item in dir(obj)
+                              if inspect.isclass(getattr(obj, item))
+                              and issubclass(getattr(obj, item), Exception)]
+                rendered = tmpl.render(name=name,
+                                       underline='='*len(name),
+                                       functions=functions,
+                                       classes=classes,
+                                       exceptions=exceptions,
+                                       len_functions=len(functions),
+                                       len_classes=len(classes),
+                                       len_exceptions=len(exceptions))
+                f.write(rendered)
             else:
-                try:
-                    template = template_env.get_template('autosummary/%s.rst'
-                                                         % doc.objtype)
-                except TemplateNotFound:
-                    template = template_env.get_template('autosummary/base.rst')
+                f.write('%s\n%s\n\n' % (name, '='*len(name)))
 
-            def get_members(obj, typ, include_public=[]):
-                items = [
-                    name for name in dir(obj)
-                    if get_documenter(getattr(obj, name)).objtype == typ
-                ]
-                public = [x for x in items
-                          if x in include_public or not x.startswith('_')]
-                return public, items
-
-            ns = {}
-
-            if doc.objtype == 'module':
-                ns['members'] = dir(obj)
-                ns['functions'], ns['all_functions'] = \
-                                   get_members(obj, 'function')
-                ns['classes'], ns['all_classes'] = \
-                                 get_members(obj, 'class')
-                ns['exceptions'], ns['all_exceptions'] = \
-                                   get_members(obj, 'exception')
-            elif doc.objtype == 'class':
-                ns['members'] = dir(obj)
-                ns['methods'], ns['all_methods'] = \
-                                 get_members(obj, 'method', ['__init__'])
-                ns['attributes'], ns['all_attributes'] = \
-                                 get_members(obj, 'attribute')
-
-            parts = name.split('.')
-            if doc.objtype in ('method', 'attribute'):
-                mod_name = '.'.join(parts[:-2])
-                cls_name = parts[-2]
-                obj_name = '.'.join(parts[-2:])
-                ns['class'] = cls_name
-            else:
-                mod_name, obj_name = '.'.join(parts[:-1]), parts[-1]
-
-            ns['fullname'] = name
-            ns['module'] = mod_name
-            ns['objname'] = obj_name
-            ns['name'] = parts[-1]
-
-            ns['objtype'] = doc.objtype
-            ns['underline'] = len(name) * '='
-
-            rendered = template.render(**ns)
-            f.write(rendered)
+                if inspect.isclass(obj):
+                    if issubclass(obj, Exception):
+                        f.write(format_modulemember(name, 'autoexception'))
+                    else:
+                        f.write(format_modulemember(name, 'autoclass'))
+                elif inspect.ismethod(obj) or inspect.ismethoddescriptor(obj):
+                    f.write(format_classmember(name, 'automethod'))
+                elif callable(obj):
+                    f.write(format_modulemember(name, 'autofunction'))
+                elif hasattr(obj, '__get__'):
+                    f.write(format_classmember(name, 'autoattribute'))
+                else:
+                    f.write(format_modulemember(name, 'autofunction'))
         finally:
             f.close()
 
-    # descend recursively to new files
-    if new_files:
-        generate_autosummary_docs(new_files, output_dir=output_dir,
-                                  suffix=suffix, warn=warn, info=info,
-                                  base_path=base_path, builder=builder,
-                                  template_dir=template_dir)
+
+def format_modulemember(name, directive):
+    parts = name.split('.')
+    mod, name = '.'.join(parts[:-1]), parts[-1]
+    return '.. currentmodule:: %s\n\n.. %s:: %s\n' % (mod, directive, name)
 
 
-# -- Finding documented entries in files ---------------------------------------
+def format_classmember(name, directive):
+    parts = name.split('.')
+    mod, name = '.'.join(parts[:-2]), '.'.join(parts[-2:])
+    return '.. currentmodule:: %s\n\n.. %s:: %s\n' % (mod, directive, name)
 
-def find_autosummary_in_files(filenames):
+
+title_underline_re = re.compile('^[-=*_^#]{3,}\s*$')
+autodoc_re = re.compile(r'.. auto(function|method|attribute|class|exception'
+                        '|module)::\s*([A-Za-z0-9_.]+)\s*$')
+autosummary_re = re.compile(r'^\.\.\s+autosummary::\s*')
+module_re = re.compile(r'^\.\.\s+(current)?module::\s*([a-zA-Z0-9_.]+)\s*$')
+autosummary_item_re = re.compile(r'^\s+([_a-zA-Z][a-zA-Z0-9_.]*)\s*')
+toctree_arg_re = re.compile(r'^\s+:toctree:\s*(.*?)\s*$')
+
+def get_documented(filenames):
     """
-    Find out what items are documented in source/*.rst.
-    See `find_autosummary_in_lines`.
+    Find out what items are documented in the given filenames.
+
+    Returns a dict of list of (filename, title, keyword, toctree) Keys are
+    documented names of objects.  The value is a list of locations where the
+    object was documented.  Each location is a tuple of filename, the current
+    section title, the name of the directive, and the value of the :toctree:
+    argument (if present) of the directive.
     """
-    documented = []
+
+    documented = {}
+
     for filename in filenames:
+        current_title = []
+        last_line = None
+        toctree = None
+        current_module = None
+        in_autosummary = False
+
         f = open(filename, 'r')
-        lines = f.read().splitlines()
-        documented.extend(find_autosummary_in_lines(lines, filename=filename))
-        f.close()
+        for line in f:
+            try:
+                if in_autosummary:
+                    m = toctree_arg_re.match(line)
+                    if m:
+                        toctree = m.group(1)
+                        continue
+
+                    if line.strip().startswith(':'):
+                        continue # skip options
+
+                    m = autosummary_item_re.match(line)
+
+                    if m:
+                        name = m.group(1).strip()
+                        if current_module and \
+                               not name.startswith(current_module + '.'):
+                            name = '%s.%s' % (current_module, name)
+                        documented.setdefault(name, []).append(
+                            (filename, current_title, 'autosummary', toctree))
+                        continue
+                    if line.strip() == '':
+                        continue
+                    in_autosummary = False
+
+                m = autosummary_re.match(line)
+                if m:
+                    in_autosummary = True
+                    continue
+
+                m = autodoc_re.search(line)
+                if m:
+                    name = m.group(2).strip()
+                    # XXX look in newer generate.py
+                    if current_module and \
+                           not name.startswith(current_module + '.'):
+                        name = '%s.%s' % (current_module, name)
+                    if m.group(1) == 'module':
+                        current_module = name
+                    documented.setdefault(name, []).append(
+                        (filename, current_title, 'auto' + m.group(1), None))
+                    continue
+
+                m = title_underline_re.match(line)
+                if m and last_line:
+                    current_title = last_line.strip()
+                    continue
+
+                m = module_re.match(line)
+                if m:
+                    current_module = m.group(2)
+                    continue
+            finally:
+                last_line = line
     return documented
 
-def find_autosummary_in_docstring(name, module=None, filename=None):
-    """
-    Find out what items are documented in the given object's docstring.
-    See `find_autosummary_in_lines`.
-    """
+
+def main(argv=sys.argv):
+    usage = 'usage: %s [-o output_dir] [-s suffix] sourcefile ...' % sys.argv[0]
     try:
-        obj, real_name = import_by_name(name)
-        lines = pydoc.getdoc(obj).splitlines()
-        return find_autosummary_in_lines(lines, module=name, filename=filename)
-    except AttributeError:
-        pass
-    except ImportError, e:
-        print "Failed to import '%s': %s" % (name, e)
-    return []
+        opts, args = getopt.getopt(argv[1:], 'o:s:')
+    except getopt.error:
+        print >>sys.stderr, usage
+        return 1
 
-def find_autosummary_in_lines(lines, module=None, filename=None):
-    """
-    Find out what items appear in autosummary:: directives in the given lines.
+    output_dir = None
+    suffix = None
+    for opt, val in opts:
+        if opt == '-o':
+            output_dir = val
+        elif opt == '-s':
+            suffix = val
 
-    Returns a list of (name, toctree, template) where *name* is a name
-    of an object and *toctree* the :toctree: path of the corresponding
-    autosummary directive (relative to the root of the file name), and
-    *template* the value of the :template: option. *toctree* and
-    *template* ``None`` if the directive does not have the
-    corresponding options set.
-    """
-    autosummary_re = re.compile(r'^\s*\.\.\s+autosummary::\s*')
-    automodule_re = re.compile(
-        r'^\s*\.\.\s+automodule::\s*([A-Za-z0-9_.]+)\s*$')
-    module_re = re.compile(
-        r'^\s*\.\.\s+(current)?module::\s*([a-zA-Z0-9_.]+)\s*$')
-    autosummary_item_re = re.compile(r'^\s+(~?[_a-zA-Z][a-zA-Z0-9_.]*)\s*.*?')
-    toctree_arg_re = re.compile(r'^\s+:toctree:\s*(.*?)\s*$')
-    template_arg_re = re.compile(r'^\s+:template:\s*(.*?)\s*$')
+    if len(args) < 1:
+        print >>sys.stderr, usage
+        return 1
 
-    documented = []
-
-    toctree = None
-    template = None
-    current_module = module
-    in_autosummary = False
-
-    for line in lines:
-        if in_autosummary:
-            m = toctree_arg_re.match(line)
-            if m:
-                toctree = m.group(1)
-                if filename:
-                    toctree = os.path.join(os.path.dirname(filename),
-                                           toctree)
-                continue
-
-            m = template_arg_re.match(line)
-            if m:
-                template = m.group(1).strip()
-                continue
-
-            if line.strip().startswith(':'):
-                continue # skip options
-
-            m = autosummary_item_re.match(line)
-            if m:
-                name = m.group(1).strip()
-                if name.startswith('~'):
-                    name = name[1:]
-                if current_module and \
-                       not name.startswith(current_module + '.'):
-                    name = "%s.%s" % (current_module, name)
-                documented.append((name, toctree, template))
-                continue
-
-            if not line.strip():
-                continue
-
-            in_autosummary = False
-
-        m = autosummary_re.match(line)
-        if m:
-            in_autosummary = True
-            toctree = None
-            template = None
-            continue
-
-        m = automodule_re.search(line)
-        if m:
-            current_module = m.group(1).strip()
-            # recurse into the automodule docstring
-            documented.extend(find_autosummary_in_docstring(
-                current_module, filename=filename))
-            continue
-
-        m = module_re.match(line)
-        if m:
-            current_module = m.group(2)
-            continue
-
-    return documented
+    generate_autosummary_docs(args, output_dir, suffix)
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv)

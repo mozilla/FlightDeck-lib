@@ -1,9 +1,9 @@
 #!/home/zalun/Environment/flightdeck/bin/python2.6
-# EASY-INSTALL-ENTRY-SCRIPT: 'Sphinx==1.0.4','console_scripts','sphinx-autogen'
-__requires__ = 'Sphinx==1.0.4'
+# EASY-INSTALL-ENTRY-SCRIPT: 'Sphinx==0.6.3','console_scripts','sphinx-autogen'
+__requires__ = 'Sphinx==0.6.3'
 import sys
 from pkg_resources import load_entry_point
 
 sys.exit(
-   load_entry_point('Sphinx==1.0.4', 'console_scripts', 'sphinx-autogen')()
+   load_entry_point('Sphinx==0.6.3', 'console_scripts', 'sphinx-autogen')()
 )

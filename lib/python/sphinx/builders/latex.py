@@ -5,7 +5,7 @@
 
     LaTeX builder.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -18,12 +18,9 @@ from docutils.utils import new_document
 from docutils.frontend import OptionParser
 
 from sphinx import package_dir, addnodes
-from sphinx.util import texescape
-from sphinx.locale import _
+from sphinx.util import SEP, texescape, copyfile
 from sphinx.builders import Builder
 from sphinx.environment import NoUri
-from sphinx.util.nodes import inline_all_toctrees
-from sphinx.util.osutil import SEP, copyfile
 from sphinx.util.console import bold, darkgreen
 from sphinx.writers.latex import LaTeXWriter
 
@@ -96,7 +93,7 @@ class LaTeXBuilder(Builder):
                 encoding='utf-8')
             self.info("processing " + targetname + "... ", nonl=1)
             doctree = self.assemble_doctree(docname, toctree_only,
-                appendices=((docclass != 'howto') and
+                appendices=((docclass == 'manual') and
                             self.config.latex_appendices or []))
             self.post_process_images(doctree)
             self.info("writing... ", nonl=1)
@@ -111,6 +108,27 @@ class LaTeXBuilder(Builder):
     def assemble_doctree(self, indexfile, toctree_only, appendices):
         self.docnames = set([indexfile] + appendices)
         self.info(darkgreen(indexfile) + " ", nonl=1)
+        def process_tree(docname, tree):
+            tree = tree.deepcopy()
+            for toctreenode in tree.traverse(addnodes.toctree):
+                newnodes = []
+                includefiles = map(str, toctreenode['includefiles'])
+                for includefile in includefiles:
+                    try:
+                        self.info(darkgreen(includefile) + " ", nonl=1)
+                        subtree = process_tree(
+                            includefile, self.env.get_doctree(includefile))
+                        self.docnames.add(includefile)
+                    except Exception:
+                        self.warn('toctree contains ref to nonexisting '
+                                  'file %r' % includefile,
+                                  self.env.doc2path(docname))
+                    else:
+                        sof = addnodes.start_of_file(docname=includefile)
+                        sof.children = subtree.children
+                        newnodes.append(sof)
+                toctreenode.parent.replace(toctreenode, newnodes)
+            return tree
         tree = self.env.get_doctree(indexfile)
         tree['docname'] = indexfile
         if toctree_only:
@@ -124,8 +142,7 @@ class LaTeXBuilder(Builder):
             for node in tree.traverse(addnodes.toctree):
                 new_sect += node
             tree = new_tree
-        largetree = inline_all_toctrees(self, self.docnames, indexfile, tree,
-                                        darkgreen)
+        largetree = process_tree(indexfile, tree)
         largetree['docname'] = indexfile
         for docname in appendices:
             appendix = self.env.get_doctree(docname)

@@ -54,12 +54,12 @@ class ParserGenerator(object):
         first = {}
         for label in rawfirst:
             ilabel = self.make_label(c, label)
-            ##assert ilabel not in first # X X X failed on <> ... !=
+            ##assert ilabel not in first # XXX failed on <> ... !=
             first[ilabel] = 1
         return first
 
     def make_label(self, c, label):
-        # X X X Maybe this should be a method on a subclass of converter?
+        # XXX Maybe this should be a method on a subclass of converter?
         ilabel = len(c.labels)
         if label[0].isalpha():
             # Either a symbol name or a named token
@@ -157,9 +157,9 @@ class ParserGenerator(object):
             #self.dump_nfa(name, a, z)
             dfa = self.make_dfa(a, z)
             #self.dump_dfa(name, dfa)
-            #oldlen = len(dfa)
+            oldlen = len(dfa)
             self.simplify_dfa(dfa)
-            #newlen = len(dfa)
+            newlen = len(dfa)
             dfas[name] = dfa
             #print name, oldlen, newlen
             if startsymbol is None:

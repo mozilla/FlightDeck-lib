@@ -6,7 +6,7 @@
     Check Python modules and C API for coverage.  Mostly written by Josip
     Dzolonga for the Google Highly Open Participation contest.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -79,7 +79,6 @@ class CoverageBuilder(Builder):
 
     def build_c_coverage(self):
         # Fetch all the info from the header files
-        c_objects = self.env.domaindata['c']['objects']
         for filename in self.c_sourcefiles:
             undoc = []
             f = open(filename, 'r')
@@ -89,7 +88,7 @@ class CoverageBuilder(Builder):
                         match = regex.match(line)
                         if match:
                             name = match.groups()[0]
-                            if name not in c_objects:
+                            if name not in self.env.descrefs:
                                 for exp in self.c_ignorexps.get(key, ()):
                                     if exp.match(name):
                                         break
@@ -117,10 +116,7 @@ class CoverageBuilder(Builder):
             op.close()
 
     def build_py_coverage(self):
-        objects = self.env.domaindata['py']['objects']
-        modules = self.env.domaindata['py']['modules']
-
-        for mod_name in modules:
+        for mod_name in self.env.modules:
             ignore = False
             for exp in self.mod_ignorexps:
                 if exp.match(mod_name):
@@ -155,7 +151,7 @@ class CoverageBuilder(Builder):
                 full_name = '%s.%s' % (mod_name, name)
 
                 if inspect.isfunction(obj):
-                    if full_name not in objects:
+                    if full_name not in self.env.descrefs:
                         for exp in self.fun_ignorexps:
                             if exp.match(name):
                                 break
@@ -166,7 +162,7 @@ class CoverageBuilder(Builder):
                         if exp.match(name):
                             break
                     else:
-                        if full_name not in objects:
+                        if full_name not in self.env.descrefs:
                             # not documented at all
                             classes[name] = []
                             continue
@@ -180,7 +176,7 @@ class CoverageBuilder(Builder):
                                 continue
 
                             full_attr_name = '%s.%s' % (full_name, attr_name)
-                            if full_attr_name not in objects:
+                            if full_attr_name not in self.env.descrefs:
                                 attrs.append(attr_name)
 
                         if attrs:

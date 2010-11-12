@@ -9,7 +9,7 @@
     Usage: Set the `refcount_file` config value to the path to the reference
     count data file.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -69,7 +69,7 @@ class Refcounts(dict):
     def add_refcount_annotations(self, app, doctree):
         for node in doctree.traverse(addnodes.desc_content):
             par = node.parent
-            if par['domain'] != 'c' or par['objtype'] != 'function':
+            if par['desctype'] != 'cfunction':
                 continue
             if not par[0].has_key('names') or not par[0]['names']:
                 continue

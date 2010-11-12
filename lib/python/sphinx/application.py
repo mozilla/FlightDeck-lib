@@ -7,33 +7,28 @@
 
     Gracefully adapted from the TextPress system by Armin.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
 import sys
 import types
 import posixpath
-from os import path
 from cStringIO import StringIO
 
 from docutils import nodes
-from docutils.parsers.rst import convert_directive_function, \
-     directives, roles
+from docutils.parsers.rst import directives, roles
 
 import sphinx
-from sphinx import package_dir, locale
-from sphinx.roles import XRefRole
+from sphinx.roles import xfileref_role, innernodetypes
 from sphinx.config import Config
-from sphinx.errors import SphinxError, SphinxWarning, ExtensionError, \
-     VersionRequirementError
-from sphinx.domains import ObjType, BUILTIN_DOMAINS
-from sphinx.domains.std import GenericObject, Target, StandardDomain
+from sphinx.errors import SphinxError, SphinxWarning, ExtensionError
 from sphinx.builders import BUILTIN_BUILDERS
-from sphinx.environment import BuildEnvironment, SphinxStandaloneReader
+from sphinx.directives import GenericDesc, Target, additional_xref_types
+from sphinx.environment import SphinxStandaloneReader
 from sphinx.util import pycompat  # imported for side-effects
 from sphinx.util.tags import Tags
-from sphinx.util.osutil import ENOENT
+from sphinx.util.compat import Directive, directive_dwim
 from sphinx.util.console import bold
 
 
@@ -49,27 +44,23 @@ events = {
     'missing-reference': 'env, node, contnode',
     'doctree-resolved': 'doctree, docname',
     'env-updated': 'env',
-    'html-collect-pages': 'builder',
     'html-page-context': 'pagename, context, doctree or None',
     'build-finished': 'exception',
 }
 
 CONFIG_FILENAME = 'conf.py'
-ENV_PICKLE_FILENAME = 'environment.pickle'
 
 
 class Sphinx(object):
 
     def __init__(self, srcdir, confdir, outdir, doctreedir, buildername,
-                 confoverrides=None, status=sys.stdout, warning=sys.stderr,
-                 freshenv=False, warningiserror=False, tags=None):
+                 confoverrides, status, warning=sys.stderr, freshenv=False,
+                 warningiserror=False, tags=None):
         self.next_listener_id = 0
         self._extensions = {}
         self._listeners = {}
-        self.domains = BUILTIN_DOMAINS.copy()
         self.builderclasses = BUILTIN_BUILDERS.copy()
         self.builder = None
-        self.env = None
 
         self.srcdir = srcdir
         self.confdir = confdir
@@ -100,18 +91,9 @@ class Sphinx(object):
 
         # read config
         self.tags = Tags(tags)
-        self.config = Config(confdir, CONFIG_FILENAME,
-                             confoverrides or {}, self.tags)
-        self.config.check_unicode(self.warn)
+        self.config = Config(confdir, CONFIG_FILENAME, confoverrides, self.tags)
 
-        # set confdir to srcdir if -C given (!= no confdir); a few pieces
-        # of code expect a confdir to be set
-        if self.confdir is None:
-            self.confdir = self.srcdir
-
-        # backwards compatibility: activate old C markup
-        self.setup_extension('sphinx.ext.oldcmarkup')
-        # load all user-given extension modules
+        # load all extension modules
         for extension in self.config.extensions:
             self.setup_extension(extension)
         # the config file itself can be an extension
@@ -121,69 +103,8 @@ class Sphinx(object):
         # now that we know all config values, collect them from conf.py
         self.config.init_values()
 
-        # check the Sphinx version if requested
-        if self.config.needs_sphinx and \
-           self.config.needs_sphinx > sphinx.__version__[:3]:
-            raise VersionRequirementError(
-                'This project needs at least Sphinx v%s and therefore cannot '
-                'be built with this version.' % self.config.needs_sphinx)
-
-        # set up translation infrastructure
-        self._init_i18n()
-        # set up the build environment
-        self._init_env(freshenv)
-        # set up the builder
-        self._init_builder(buildername)
-
-    def _init_i18n(self):
-        """
-        Load translated strings from the configured localedirs if
-        enabled in the configuration.
-        """
-        if self.config.language is not None:
-            self.info(bold('loading translations [%s]... ' %
-                           self.config.language), nonl=True)
-            locale_dirs = [None, path.join(package_dir, 'locale')] + \
-                [path.join(self.srcdir, x) for x in self.config.locale_dirs]
-        else:
-            locale_dirs = []
-        self.translator, has_translation = locale.init(locale_dirs,
-                                                       self.config.language)
-        if self.config.language is not None:
-            if has_translation:
-                self.info('done')
-            else:
-                self.info('locale not available')
-
-    def _init_env(self, freshenv):
-        if freshenv:
-            self.env = BuildEnvironment(self.srcdir, self.doctreedir,
-                                        self.config)
-            self.env.find_files(self.config)
-            for domain in self.domains.keys():
-                self.env.domains[domain] = self.domains[domain](self.env)
-        else:
-            try:
-                self.info(bold('loading pickled environment... '), nonl=True)
-                self.env = BuildEnvironment.frompickle(self.config,
-                    path.join(self.doctreedir, ENV_PICKLE_FILENAME))
-                self.env.domains = {}
-                for domain in self.domains.keys():
-                    # this can raise if the data version doesn't fit
-                    self.env.domains[domain] = self.domains[domain](self.env)
-                self.info('done')
-            except Exception, err:
-                if type(err) is IOError and err.errno == ENOENT:
-                    self.info('not yet created')
-                else:
-                    self.info('failed: %s' % err)
-                return self._init_env(freshenv=True)
-
-        self.env.set_warnfunc(self.warn)
-
-    def _init_builder(self, buildername):
         if buildername is None:
-            print >>self._status, 'No builder selected, using default: html'
+            print >>status, 'No builder selected, using default: html'
             buildername = 'html'
         if buildername not in self.builderclasses:
             raise SphinxError('Builder name %s not registered' % buildername)
@@ -194,12 +115,14 @@ class Sphinx(object):
             mod, cls = builderclass
             builderclass = getattr(
                 __import__('sphinx.builders.' + mod, None, None, [cls]), cls)
-        self.builder = builderclass(self)
+        self.builder = builderclass(self, freshenv=freshenv)
+        self.builder.tags = self.tags
+        self.builder.tags.add(self.builder.format)
         self.emit('builder-inited')
 
-    def build(self, force_all=False, filenames=None):
+    def build(self, all_files, filenames):
         try:
-            if force_all:
+            if all_files:
                 self.builder.build_all()
             elif filenames:
                 self.builder.build_specific(filenames)
@@ -249,20 +172,8 @@ class Sphinx(object):
             self.warn('extension %r has no setup() function; is it really '
                       'a Sphinx extension module?' % extension)
         else:
-            try:
-                mod.setup(self)
-            except VersionRequirementError, err:
-                # add the extension name to the version required
-                raise VersionRequirementError(
-                    'The %s extension used by this project needs at least '
-                    'Sphinx v%s; it therefore cannot be built with this '
-                    'version.' % (extension, err))
+            mod.setup(self)
         self._extensions[extension] = mod
-
-    def require_sphinx(self, version):
-        # check the Sphinx version if requested
-        if version > sphinx.__version__[:3]:
-            raise VersionRequirementError(version)
 
     def import_object(self, objname, source=None):
         """Import an object from a 'module.name' string."""
@@ -305,11 +216,11 @@ class Sphinx(object):
             event.pop(listener_id, None)
 
     def emit(self, event, *args):
-        results = []
+        result = []
         if event in self._listeners:
             for _, callback in self._listeners[event].iteritems():
-                results.append(callback(self, *args))
-        return results
+                result.append(callback(self, *args))
+        return result
 
     def emit_firstresult(self, event, *args):
         for result in self.emit(event, *args):
@@ -359,9 +270,6 @@ class Sphinx(object):
                 from sphinx.writers.latex import LaTeXTranslator as translator
             elif key == 'text':
                 from sphinx.writers.text import TextTranslator as translator
-            elif key == 'man':
-                from sphinx.writers.manpage import ManualPageTranslator \
-                    as translator
             else:
                 # ignore invalid keys for compatibility
                 continue
@@ -369,21 +277,17 @@ class Sphinx(object):
             if depart:
                 setattr(translator, 'depart_'+node.__name__, depart)
 
-    def _directive_helper(self, obj, content=None, arguments=None, **options):
-        if isinstance(obj, (types.FunctionType, types.MethodType)):
-            obj.content = content
-            obj.arguments = arguments or (0, 0, False)
-            obj.options = options
-            return convert_directive_function(obj)
-        else:
+    def add_directive(self, name, obj, content=None, arguments=None, **options):
+        if isinstance(obj, clstypes) and issubclass(obj, Directive):
             if content or arguments or options:
                 raise ExtensionError('when adding directive classes, no '
                                      'additional arguments may be given')
-            return obj
-
-    def add_directive(self, name, obj, content=None, arguments=None, **options):
-        directives.register_directive(
-            name, self._directive_helper(obj, content, arguments, **options))
+            directives.register_directive(name, directive_dwim(obj))
+        else:
+            obj.content = content
+            obj.arguments = arguments
+            obj.options = options
+            directives.register_directive(name, obj)
 
     def add_role(self, name, role):
         roles.register_local_role(name, role)
@@ -394,77 +298,30 @@ class Sphinx(object):
         role = roles.GenericRole(name, nodeclass)
         roles.register_local_role(name, role)
 
-    def add_domain(self, domain):
-        if domain.name in self.domains:
-            raise ExtensionError('domain %s already registered' % domain.name)
-        self.domains[domain.name] = domain
-
-    def override_domain(self, domain):
-        if domain.name not in self.domains:
-            raise ExtensionError('domain %s not yet registered' % domain.name)
-        if not issubclass(domain, self.domains[domain.name]):
-            raise ExtensionError('new domain not a subclass of registered '
-                                 'domain' % domain.name)
-        self.domains[domain.name] = domain
-
-    def add_directive_to_domain(self, domain, name, obj,
-                                content=None, arguments=None, **options):
-        if domain not in self.domains:
-            raise ExtensionError('domain %s not yet registered' % domain)
-        self.domains[domain].directives[name] = \
-            self._directive_helper(obj, content, arguments, **options)
-
-    def add_role_to_domain(self, domain, name, role):
-        if domain not in self.domains:
-            raise ExtensionError('domain %s not yet registered' % domain)
-        self.domains[domain].roles[name] = role
-
-    def add_index_to_domain(self, domain, name, localname, shortname, func):
-        if domain not in self.domains:
-            raise ExtensionError('domain %s not yet registered' % domain)
-        self.domains[domain].indices.append((name, localname, shortname))
-        setattr(self.domains[domain], 'get_%s_index' % name, func)
-
-    def add_object_type(self, directivename, rolename, indextemplate='',
-                        parse_node=None, ref_nodeclass=None, objname=''):
-        StandardDomain.object_types[directivename] = \
-            ObjType(objname or directivename, rolename)
-        # create a subclass of GenericObject as the new directive
-        new_directive = type(directivename, (GenericObject, object),
-                             {'indextemplate': indextemplate,
-                              'parse_node': staticmethod(parse_node)})
-        StandardDomain.directives[directivename] = new_directive
-        # XXX support more options?
-        StandardDomain.roles[rolename] = XRefRole(innernodeclass=ref_nodeclass)
-
-    # backwards compatible alias
-    add_description_unit = add_object_type
+    def add_description_unit(self, directivename, rolename, indextemplate='',
+                             parse_node=None, ref_nodeclass=None):
+        additional_xref_types[directivename] = (rolename, indextemplate,
+                                                parse_node)
+        directives.register_directive(directivename,
+                                      directive_dwim(GenericDesc))
+        roles.register_local_role(rolename, xfileref_role)
+        if ref_nodeclass is not None:
+            innernodetypes[rolename] = ref_nodeclass
 
     def add_crossref_type(self, directivename, rolename, indextemplate='',
-                          ref_nodeclass=None, objname=''):
-        StandardDomain.object_types[directivename] = \
-            ObjType(objname or directivename, rolename)
-        # create a subclass of Target as the new directive
-        new_directive = type(directivename, (Target, object),
-                             {'indextemplate': indextemplate})
-        StandardDomain.directives[directivename] = new_directive
-        # XXX support more options?
-        StandardDomain.roles[rolename] = XRefRole(innernodeclass=ref_nodeclass)
+                          ref_nodeclass=None):
+        additional_xref_types[directivename] = (rolename, indextemplate, None)
+        directives.register_directive(directivename, directive_dwim(Target))
+        roles.register_local_role(rolename, xfileref_role)
+        if ref_nodeclass is not None:
+            innernodetypes[rolename] = ref_nodeclass
 
     def add_transform(self, transform):
         SphinxStandaloneReader.transforms.append(transform)
 
     def add_javascript(self, filename):
         from sphinx.builders.html import StandaloneHTMLBuilder
-        if '://' in filename:
-            StandaloneHTMLBuilder.script_files.append(filename)
-        else:
-            StandaloneHTMLBuilder.script_files.append(
-                posixpath.join('_static', filename))
-
-    def add_stylesheet(self, filename):
-        from sphinx.builders.html import StandaloneHTMLBuilder
-        StandaloneHTMLBuilder.css_files.append(
+        StandaloneHTMLBuilder.script_files.append(
             posixpath.join('_static', filename))
 
     def add_lexer(self, alias, lexer):

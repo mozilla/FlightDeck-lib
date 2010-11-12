@@ -16,7 +16,7 @@ fallback token code OP, but the parser needs the actual token code.
 import pickle
 
 # Local imports
-from sphinx.pycode.pgen2 import token
+from sphinx.pycode.pgen2 import token, tokenize
 
 
 class Grammar(object):

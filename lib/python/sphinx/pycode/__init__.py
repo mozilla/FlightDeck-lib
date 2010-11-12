@@ -5,7 +5,7 @@
 
     Utilities parsing and analyzing Python code.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -14,10 +14,8 @@ import sys
 from os import path
 from cStringIO import StringIO
 
-from sphinx.errors import PycodeError
 from sphinx.pycode import nodes
 from sphinx.pycode.pgen2 import driver, token, tokenize, parse, literals
-from sphinx.util import get_module_source
 from sphinx.util.docstrings import prepare_docstring, prepare_commentdoc
 
 
@@ -47,41 +45,21 @@ _eq = nodes.Leaf(token.EQUAL, '=')
 class AttrDocVisitor(nodes.NodeVisitor):
     """
     Visitor that collects docstrings for attribute assignments on toplevel and
-    in classes (class attributes and attributes set in __init__).
+    in classes.
 
     The docstrings can either be in special '#:' comments before the assignment
     or in a docstring after it.
     """
     def init(self, scope, encoding):
         self.scope = scope
-        self.in_init = 0
         self.encoding = encoding
         self.namespace = []
         self.collected = {}
-        self.tagnumber = 0
-        self.tagorder = {}
-
-    def add_tag(self, name):
-        name = '.'.join(self.namespace + [name])
-        self.tagorder[name] = self.tagnumber
-        self.tagnumber += 1
 
     def visit_classdef(self, node):
-        """Visit a class."""
-        self.add_tag(node[1].value)
         self.namespace.append(node[1].value)
         self.generic_visit(node)
         self.namespace.pop()
-
-    def visit_funcdef(self, node):
-        """Visit a function (or method)."""
-        # usually, don't descend into functions -- nothing interesting there
-        self.add_tag(node[1].value)
-        if node[1].value == '__init__':
-            # however, collect attributes set in __init__ methods
-            self.in_init += 1
-            self.generic_visit(node)
-            self.in_init -= 1
 
     def visit_expr_stmt(self, node):
         """Visit an assignment which may have a special comment before it."""
@@ -100,7 +78,8 @@ class AttrDocVisitor(nodes.NodeVisitor):
             prefix = pnode.get_prefix()
         prefix = prefix.decode(self.encoding)
         docstring = prepare_commentdoc(prefix)
-        self.add_docstring(node, docstring)
+        if docstring:
+            self.add_docstring(node, docstring)
 
     def visit_simple_stmt(self, node):
         """Visit a docstring statement which may have an assignment before."""
@@ -118,34 +97,28 @@ class AttrDocVisitor(nodes.NodeVisitor):
             docstring = prepare_docstring(docstring)
             self.add_docstring(prev[0], docstring)
 
+    def visit_funcdef(self, node):
+        # don't descend into functions -- nothing interesting there
+        return
+
     def add_docstring(self, node, docstring):
         # add an item for each assignment target
         for i in range(0, len(node) - 1, 2):
             target = node[i]
-            if self.in_init and self.number2name[target.type] == 'power':
-                # maybe an attribute assignment -- check necessary conditions
-                if (# node must have two children
-                    len(target) != 2 or
-                    # first child must be "self"
-                    target[0].type != token.NAME or target[0].value != 'self' or
-                    # second child must be a "trailer" with two children
-                    self.number2name[target[1].type] != 'trailer' or
-                    len(target[1]) != 2 or
-                    # first child must be a dot, second child a name
-                    target[1][0].type != token.DOT or
-                    target[1][1].type != token.NAME):
-                    continue
-                name = target[1][1].value
-            elif target.type != token.NAME:
-                # don't care about other complex targets
+            if target.type != token.NAME:
+                # don't care about complex targets
                 continue
-            else:
-                name = target.value
-            self.add_tag(name)
-            if docstring:
-                namespace = '.'.join(self.namespace)
-                if namespace.startswith(self.scope):
-                    self.collected[namespace, name] = docstring
+            namespace = '.'.join(self.namespace)
+            if namespace.startswith(self.scope):
+                self.collected[namespace, target.value] = docstring
+
+
+class PycodeError(Exception):
+    def __str__(self):
+        res = self.args[0]
+        if len(self.args) > 1:
+            res += ' (exception was: %r)' % self.args[1]
+        return res
 
 
 class ModuleAnalyzer(object):
@@ -177,11 +150,33 @@ class ModuleAnalyzer(object):
             return entry
 
         try:
-            type, source = get_module_source(modname)
-            if type == 'string':
+            if modname not in sys.modules:
+                try:
+                    __import__(modname)
+                except ImportError, err:
+                    raise PycodeError('error importing %r' % modname, err)
+            mod = sys.modules[modname]
+            if hasattr(mod, '__loader__'):
+                try:
+                    source = mod.__loader__.get_source(modname)
+                except Exception, err:
+                    raise PycodeError('error getting source for %r' % modname,
+                                      err)
                 obj = cls.for_string(source, modname)
-            else:
-                obj = cls.for_file(source, modname)
+                cls.cache['module', modname] = obj
+                return obj
+            filename = getattr(mod, '__file__', None)
+            if filename is None:
+                raise PycodeError('no source found for module %r' % modname)
+            filename = path.normpath(path.abspath(filename))
+            lfilename = filename.lower()
+            if lfilename.endswith('.pyo') or lfilename.endswith('.pyc'):
+                filename = filename[:-1]
+            elif not lfilename.endswith('.py'):
+                raise PycodeError('source is not a .py file: %r' % filename)
+            if not path.isfile(filename):
+                raise PycodeError('source file is not present: %r' % filename)
+            obj = cls.for_file(filename, modname)
         except PycodeError, err:
             cls.cache['module', modname] = err
             raise
@@ -195,13 +190,6 @@ class ModuleAnalyzer(object):
         self.srcname = srcname
         # file-like object yielding source lines
         self.source = source
-        # will be changed when found by parse()
-        self.encoding = sys.getdefaultencoding()
-
-        # cache the source code as well
-        pos = self.source.tell()
-        self.code = self.source.read()
-        self.source.seek(pos)
 
         # will be filled by tokenize()
         self.tokens = None
@@ -209,7 +197,6 @@ class ModuleAnalyzer(object):
         self.parsetree = None
         # will be filled by find_attr_docs()
         self.attr_docs = None
-        self.tagorder = None
         # will be filled by find_tags()
         self.tags = None
 
@@ -229,13 +216,15 @@ class ModuleAnalyzer(object):
             self.parsetree = pydriver.parse_tokens(self.tokens)
         except parse.ParseError, err:
             raise PycodeError('parsing failed', err)
-        # find the source code encoding, if present
+        # find the source code encoding
+        encoding = sys.getdefaultencoding()
         comments = self.parsetree.get_prefix()
         for line in comments.splitlines()[:2]:
             match = _coding_re.search(line)
             if match is not None:
-                self.encoding = match.group(1)
+                encoding = match.group(1)
                 break
+        self.encoding = encoding
 
     def find_attr_docs(self, scope=''):
         """Find class and module-level attributes and their documentation."""
@@ -245,7 +234,6 @@ class ModuleAnalyzer(object):
         attr_visitor = AttrDocVisitor(number2name, scope, self.encoding)
         attr_visitor.visit(self.parsetree)
         self.attr_docs = attr_visitor.collected
-        self.tagorder = attr_visitor.tagorder
         # now that we found everything we could in the tree, throw it away
         # (it takes quite a bit of memory for large modules)
         self.parsetree = None
@@ -310,8 +298,8 @@ if __name__ == '__main__':
     import time, pprint
     x0 = time.time()
     #ma = ModuleAnalyzer.for_file(__file__.rstrip('c'), 'sphinx.builders.html')
-    ma = ModuleAnalyzer.for_file('sphinx/environment.py',
-                                 'sphinx.environment')
+    ma = ModuleAnalyzer.for_file('sphinx/builders/html.py',
+                                 'sphinx.builders.html')
     ma.tokenize()
     x1 = time.time()
     ma.parse()

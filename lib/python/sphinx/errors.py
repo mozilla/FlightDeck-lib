@@ -6,7 +6,7 @@
     Contains SphinxError and a few subclasses (in an extra module to avoid
     circular import problems).
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -44,21 +44,5 @@ class ExtensionError(SphinxError):
         return parent_str
 
 
-class ConfigError(SphinxError):
-    category = 'Configuration error'
-
-
 class ThemeError(SphinxError):
     category = 'Theme error'
-
-
-class VersionRequirementError(SphinxError):
-    category = 'Sphinx version error'
-
-
-class PycodeError(Exception):
-    def __str__(self):
-        res = self.args[0]
-        if len(self.args) > 1:
-            res += ' (exception was: %r)' % self.args[1]
-        return res

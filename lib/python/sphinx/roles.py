@@ -5,178 +5,62 @@
 
     Handlers for additional ReST roles.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
 import re
-import warnings
 
 from docutils import nodes, utils
 from docutils.parsers.rst import roles
 
 from sphinx import addnodes
-from sphinx.locale import _
-from sphinx.util import ws_re
-from sphinx.util.nodes import split_explicit_title
+from sphinx.util import ws_re, caption_ref_re
 
 
 generic_docroles = {
     'command' : nodes.strong,
     'dfn' : nodes.emphasis,
+    'guilabel' : nodes.strong,
     'kbd' : nodes.literal,
     'mailheader' : addnodes.literal_emphasis,
     'makevar' : nodes.strong,
     'manpage' : addnodes.literal_emphasis,
     'mimetype' : addnodes.literal_emphasis,
     'newsgroup' : addnodes.literal_emphasis,
-    'program' : nodes.strong,  # XXX should be an x-ref
+    'program' : nodes.strong,
     'regexp' : nodes.literal,
 }
 
 for rolename, nodeclass in generic_docroles.iteritems():
-    generic = roles.GenericRole(rolename, nodeclass)
-    role = roles.CustomRole(rolename, generic, {'classes': [rolename]})
+    role = roles.GenericRole(rolename, nodeclass)
     roles.register_local_role(rolename, role)
-
-# -- generic cross-reference role ----------------------------------------------
-
-class XRefRole(object):
-    """
-    A generic cross-referencing role.  To create a callable that can be used as
-    a role function, create an instance of this class.
-
-    The general features of this role are:
-
-    * Automatic creation of a reference and a content node.
-    * Optional separation of title and target with `title <target>`.
-    * The implementation is a class rather than a function to make
-      customization easier.
-
-    Customization can be done in two ways:
-
-    * Supplying constructor parameters:
-      * `fix_parens` to normalize parentheses (strip from target, and add to
-        title if configured)
-      * `lowercase` to lowercase the target
-      * `nodeclass` and `innernodeclass` select the node classes for
-        the reference and the content node
-
-    * Subclassing and overwriting `process_link()` and/or `result_nodes()`.
-    """
-
-    nodeclass = addnodes.pending_xref
-    innernodeclass = nodes.literal
-
-    def __init__(self, fix_parens=False, lowercase=False,
-                 nodeclass=None, innernodeclass=None):
-        self.fix_parens = fix_parens
-        self.lowercase = lowercase
-        if nodeclass is not None:
-            self.nodeclass = nodeclass
-        if innernodeclass is not None:
-            self.innernodeclass = innernodeclass
-
-    def _fix_parens(self, env, has_explicit_title, title, target):
-        if not has_explicit_title:
-            if title.endswith('()'):
-                # remove parentheses
-                title = title[:-2]
-            if env.config.add_function_parentheses:
-                # add them back to all occurrences if configured
-                title += '()'
-        # remove parentheses from the target too
-        if target.endswith('()'):
-            target = target[:-2]
-        return title, target
-
-    def __call__(self, typ, rawtext, text, lineno, inliner,
-                 options={}, content=[]):
-        env = inliner.document.settings.env
-        if not typ:
-            typ = env.config.default_role
-        else:
-            typ = typ.lower()
-        if ':' not in typ:
-            domain, role = '', typ
-            classes = ['xref', role]
-        else:
-            domain, role = typ.split(':', 1)
-            classes = ['xref', domain, '%s-%s' % (domain, role)]
-        # if the first character is a bang, don't cross-reference at all
-        if text[0:1] == '!':
-            text = utils.unescape(text)[1:]
-            if self.fix_parens:
-                text, tgt = self._fix_parens(env, False, text, "")
-            innernode = self.innernodeclass(rawtext, text, classes=classes)
-            return self.result_nodes(inliner.document, env, innernode,
-                                     is_ref=False)
-        # split title and target in role content
-        has_explicit_title, title, target = split_explicit_title(text)
-        title = utils.unescape(title)
-        target = utils.unescape(target)
-        # fix-up title and target
-        if self.lowercase:
-            target = target.lower()
-        if self.fix_parens:
-            title, target = self._fix_parens(
-                env, has_explicit_title, title, target)
-        # create the reference node
-        refnode = self.nodeclass(rawtext, reftype=role, refdomain=domain,
-                                 refexplicit=has_explicit_title)
-        # we may need the line number for warnings
-        refnode.line = lineno
-        title, target = self.process_link(
-            env, refnode, has_explicit_title, title, target)
-        # now that the target and title are finally determined, set them
-        refnode['reftarget'] = target
-        refnode += self.innernodeclass(rawtext, title, classes=classes)
-        # we also need the source document
-        refnode['refdoc'] = env.docname
-        # result_nodes allow further modification of return values
-        return self.result_nodes(inliner.document, env, refnode, is_ref=True)
-
-    # methods that can be overwritten
-
-    def process_link(self, env, refnode, has_explicit_title, title, target):
-        """
-        Called after parsing title and target text, and creating the reference
-        node (given in *refnode*).  This method can alter the reference node and
-        must return a new (or the same) ``(title, target)`` tuple.
-        """
-        return title, ws_re.sub(' ', target)
-
-    def result_nodes(self, document, env, node, is_ref):
-        """
-        Called before returning the finished nodes.  *node* is the reference
-        node if one was created (*is_ref* is then true), else the content node.
-        This method can add other nodes and must return a ``(nodes, messages)``
-        tuple (the usual return value of a role function).
-        """
-        return [node], []
 
 
 def indexmarkup_role(typ, rawtext, etext, lineno, inliner,
                      options={}, content=[]):
-    """Role for PEP/RFC references that generate an index entry."""
     env = inliner.document.settings.env
     if not typ:
         typ = env.config.default_role
     else:
         typ = typ.lower()
     text = utils.unescape(etext)
-    targetid = 'index-%s' % env.new_serialno('index')
+    targetid = 'index-%s' % env.index_num
+    env.index_num += 1
     indexnode = addnodes.index()
     targetnode = nodes.target('', '', ids=[targetid])
     inliner.document.note_explicit_target(targetnode)
-    if typ == 'pep':
+    if typ == 'envvar':
+        indexnode['entries'] = [('single', text, targetid, text),
+                                ('single', _('environment variable; %s') % text,
+                                 targetid, text)]
+        xref_nodes = xfileref_role(typ, rawtext, etext, lineno, inliner,
+                                   options, content)[0]
+        return [indexnode, targetnode] + xref_nodes, []
+    elif typ == 'pep':
         indexnode['entries'] = [
             ('single', _('Python Enhancement Proposals!PEP %s') % text,
              targetid, 'PEP %s' % text)]
-        anchor = ''
-        anchorindex = text.find('#')
-        if anchorindex > 0:
-            text, anchor = text[:anchorindex], text[anchorindex:]
         try:
             pepnum = int(text)
         except ValueError:
@@ -186,17 +70,12 @@ def indexmarkup_role(typ, rawtext, etext, lineno, inliner,
             return [prb], [msg]
         ref = inliner.document.settings.pep_base_url + 'pep-%04d' % pepnum
         sn = nodes.strong('PEP '+text, 'PEP '+text)
-        rn = nodes.reference('', '', internal=False, refuri=ref+anchor,
-                             classes=[typ])
+        rn = nodes.reference('', '', refuri=ref)
         rn += sn
         return [indexnode, targetnode, rn], []
     elif typ == 'rfc':
         indexnode['entries'] = [('single', 'RFC; RFC %s' % text,
                                  targetid, 'RFC %s' % text)]
-        anchor = ''
-        anchorindex = text.find('#')
-        if anchorindex > 0:
-            text, anchor = text[:anchorindex], text[anchorindex:]
         try:
             rfcnum = int(text)
         except ValueError:
@@ -206,38 +85,135 @@ def indexmarkup_role(typ, rawtext, etext, lineno, inliner,
             return [prb], [msg]
         ref = inliner.document.settings.rfc_base_url + inliner.rfc_url % rfcnum
         sn = nodes.strong('RFC '+text, 'RFC '+text)
-        rn = nodes.reference('', '', internal=False, refuri=ref+anchor,
-                             classes=[typ])
+        rn = nodes.reference('', '', refuri=ref)
         rn += sn
         return [indexnode, targetnode, rn], []
 
+roles.register_local_role('envvar', indexmarkup_role)
+roles.register_local_role('pep', indexmarkup_role)
+roles.register_local_role('rfc', indexmarkup_role)
 
-_amp_re = re.compile(r'(?<!&)&(?![&\s])')
+
+# default is `literal`
+innernodetypes = {
+    'ref': nodes.emphasis,
+    'term': nodes.emphasis,
+    'token': nodes.strong,
+    'envvar': nodes.strong,
+    'download': nodes.strong,
+    'option': addnodes.literal_emphasis,
+}
+
+def _fix_parens(typ, text, env):
+    if typ in ('func', 'meth', 'cfunc'):
+        if text.endswith('()'):
+            # remove parentheses
+            text = text[:-2]
+        if env.config.add_function_parentheses:
+            # add them back to all occurrences if configured
+            text += '()'
+    return text
+
+def xfileref_role(typ, rawtext, text, lineno, inliner, options={}, content=[]):
+    env = inliner.document.settings.env
+    if not typ:
+        typ = env.config.default_role
+    else:
+        typ = typ.lower()
+    text = utils.unescape(text)
+    # if the first character is a bang, don't cross-reference at all
+    if text[0:1] == '!':
+        text = _fix_parens(typ, text[1:], env)
+        return [innernodetypes.get(typ, nodes.literal)(
+            rawtext, text, classes=['xref'])], []
+    # we want a cross-reference, create the reference node
+    nodeclass = (typ == 'download') and addnodes.download_reference or \
+                addnodes.pending_xref
+    pnode = nodeclass(rawtext, reftype=typ, refcaption=False,
+                      modname=env.currmodule, classname=env.currclass)
+    # we may need the line number for warnings
+    pnode.line = lineno
+    # the link title may differ from the target, but by default
+    # they are the same
+    title = target = text
+    titleistarget = True
+    # look if explicit title and target are given with `foo <bar>` syntax
+    brace = text.find('<')
+    if brace != -1:
+        titleistarget = False
+        pnode['refcaption'] = True
+        m = caption_ref_re.match(text)
+        if m:
+            target = m.group(2)
+            title = m.group(1)
+        else:
+            # fallback: everything after '<' is the target
+            target = text[brace+1:]
+            title = text[:brace]
+    # special target for Python object cross-references
+    if typ in ('data', 'exc', 'func', 'class', 'const', 'attr',
+               'meth', 'mod', 'obj'):
+        # fix-up parentheses in link title
+        if titleistarget:
+            title = title.lstrip('.')   # only has a meaning for the target
+            target = target.lstrip('~') # only has a meaning for the title
+            title = _fix_parens(typ, title, env)
+            # if the first character is a tilde, don't display the module/class
+            # parts of the contents
+            if title[0:1] == '~':
+                title = title[1:]
+                dot = title.rfind('.')
+                if dot != -1:
+                    title = title[dot+1:]
+        # remove parentheses from the target too
+        if target.endswith('()'):
+            target = target[:-2]
+        # if the first character is a dot, search more specific namespaces first
+        # else search builtins first
+        if target[0:1] == '.':
+            target = target[1:]
+            pnode['refspecific'] = True
+    # some other special cases for the target
+    elif typ == 'option':
+        program = env.currprogram
+        if titleistarget:
+            if ' ' in title and not (title.startswith('/') or
+                                     title.startswith('-')):
+                program, target = re.split(' (?=-|--|/)', title, 1)
+                program = ws_re.sub('-', program)
+                target = target.strip()
+        elif ' ' in target:
+            program, target = re.split(' (?=-|--|/)', target, 1)
+            program = ws_re.sub('-', program)
+        pnode['refprogram'] = program
+    elif typ == 'term':
+        # normalize whitespace in definition terms (if the term reference is
+        # broken over a line, a newline will be in target)
+        target = ws_re.sub(' ', target).lower()
+    elif typ == 'ref':
+        # reST label names are always lowercased
+        target = ws_re.sub('', target).lower()
+    elif typ == 'cfunc':
+        # fix-up parens for C functions too
+        if titleistarget:
+            title = _fix_parens(typ, title, env)
+        # remove parentheses from the target too
+        if target.endswith('()'):
+            target = target[:-2]
+    else:
+        # remove all whitespace to avoid referencing problems
+        target = ws_re.sub('', target)
+    pnode['reftarget'] = target
+    pnode += innernodetypes.get(typ, nodes.literal)(rawtext, title,
+                                                    classes=['xref'])
+    return [pnode], []
+
 
 def menusel_role(typ, rawtext, text, lineno, inliner, options={}, content=[]):
-    text = utils.unescape(text)
-    if typ == 'menuselection':
-        text = text.replace('-->', u'\N{TRIANGULAR BULLET}')
-    spans = _amp_re.split(text)
+    return [nodes.emphasis(
+        rawtext,
+        utils.unescape(text).replace('-->', u'\N{TRIANGULAR BULLET}'))], []
 
-    node = nodes.emphasis(rawtext=rawtext)
-    for i, span in enumerate(spans):
-        span = span.replace('&&', '&')
-        if i == 0:
-            if len(span) > 0:
-                textnode = nodes.Text(span)
-                node += textnode
-            continue
-        accel_node = nodes.inline()
-        letter_node = nodes.Text(span[0])
-        accel_node += letter_node
-        accel_node['classes'].append('accelerator')
-        node += accel_node
-        textnode = nodes.Text(span[1:])
-        node += textnode
-
-    node['classes'].append(typ)
-    return [node], []
 
 _litvar_re = re.compile('{([^}]+)}')
 
@@ -245,7 +221,7 @@ def emph_literal_role(typ, rawtext, text, lineno, inliner,
                       options={}, content=[]):
     text = utils.unescape(text)
     pos = 0
-    retnode = nodes.literal(role=typ.lower(), classes=[typ])
+    retnode = nodes.literal(role=typ.lower())
     for m in _litvar_re.finditer(text):
         if m.start() > pos:
             txt = text[pos:m.start()]
@@ -270,14 +246,30 @@ def abbr_role(typ, rawtext, text, lineno, inliner, options={}, content=[]):
 
 
 specific_docroles = {
-    # links to download references
-    'download': XRefRole(nodeclass=addnodes.download_reference),
-    # links to documents
-    'doc': XRefRole(),
+    'data': xfileref_role,
+    'exc': xfileref_role,
+    'func': xfileref_role,
+    'class': xfileref_role,
+    'const': xfileref_role,
+    'attr': xfileref_role,
+    'meth': xfileref_role,
+    'obj': xfileref_role,
+    'cfunc' : xfileref_role,
+    'cmember': xfileref_role,
+    'cdata': xfileref_role,
+    'ctype': xfileref_role,
+    'cmacro': xfileref_role,
 
-    'pep': indexmarkup_role,
-    'rfc': indexmarkup_role,
-    'guilabel': menusel_role,
+    'mod': xfileref_role,
+
+    'keyword': xfileref_role,
+    'ref': xfileref_role,
+    'token': xfileref_role,
+    'term': xfileref_role,
+    'option': xfileref_role,
+    'doc': xfileref_role,
+    'download': xfileref_role,
+
     'menuselection': menusel_role,
     'file': emph_literal_role,
     'samp': emph_literal_role,
@@ -286,10 +278,3 @@ specific_docroles = {
 
 for rolename, func in specific_docroles.iteritems():
     roles.register_local_role(rolename, func)
-
-
-# backwards compatibility alias
-def xfileref_role(*args, **kwds):
-    warnings.warn('xfileref_role is deprecated, use XRefRole',
-                  DeprecationWarning, stacklevel=2)
-    return XRefRole()(*args, **kwds)

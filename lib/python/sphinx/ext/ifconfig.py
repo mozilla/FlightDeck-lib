@@ -16,7 +16,7 @@
     namespace of the project configuration (that is, all variables from
     ``conf.py`` are available.)
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -41,8 +41,7 @@ class IfConfig(Directive):
         node.document = self.state.document
         node.line = self.lineno
         node['expr'] = self.arguments[0]
-        self.state.nested_parse(self.content, self.content_offset,
-                                node, match_titles=1)
+        self.state.nested_parse(self.content, self.content_offset, node)
         return [node]
 
 

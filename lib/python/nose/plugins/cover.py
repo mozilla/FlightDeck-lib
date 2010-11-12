@@ -106,8 +106,6 @@ class Coverage(Plugin):
         except KeyError:
             pass
         Plugin.configure(self, options, config)
-        if config.worker:
-            return
         if self.enabled:
             try:
                 import coverage

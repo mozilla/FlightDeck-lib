@@ -5,15 +5,15 @@
 
     The Sphinx documentation toolchain.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
 import sys
 from os import path
 
-__version__  = '1.0.4'
-__released__ = '1.0.4'  # used when Sphinx builds its own docs
+__version__ = '0.6.3'
+__released__ = '0.6.3'  # used when Sphinx builds its own docs
 
 package_dir = path.abspath(path.dirname(__file__))
 
@@ -49,7 +49,7 @@ def main(argv=sys.argv):
             if whichmod.startswith('docutils'):
                 whichmod = 'Docutils library'
             elif whichmod.startswith('jinja'):
-                whichmod = 'Jinja2 library'
+                whichmod = 'Jinja library'
             elif whichmod == 'roman':
                 whichmod = 'roman module (which is distributed with Docutils)'
                 hint = ('This can happen if you upgraded docutils using\n'

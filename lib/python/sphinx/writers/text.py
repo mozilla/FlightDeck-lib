@@ -5,7 +5,7 @@
 
     Custom docutils writer for plain text.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -15,7 +15,7 @@ import textwrap
 from docutils import nodes, writers
 
 from sphinx import addnodes
-from sphinx.locale import admonitionlabels, versionlabels, _
+from sphinx.locale import admonitionlabels, versionlabels
 
 
 class TextWriter(writers.Writer):
@@ -47,14 +47,13 @@ STDINDENT = 3
 
 
 class TextTranslator(nodes.NodeVisitor):
-    sectionchars = '*=-~"+`'
+    sectionchars = '*=-~"+'
 
     def __init__(self, document, builder):
         nodes.NodeVisitor.__init__(self, document)
 
         self.states = [[]]
         self.stateindent = [0]
-        self.list_counter = []
         self.sectionlevel = 0
         self.table = None
 
@@ -161,6 +160,13 @@ class TextTranslator(nodes.NodeVisitor):
     def depart_attribution(self, node):
         pass
 
+    def visit_module(self, node):
+        if node.has_key('platform'):
+            self.new_state(0)
+            self.add_text(_('Platform: %s') % node['platform'])
+            self.end_state()
+        raise nodes.SkipNode
+
     def visit_desc(self, node):
         pass
     def depart_desc(self, node):
@@ -168,8 +174,8 @@ class TextTranslator(nodes.NodeVisitor):
 
     def visit_desc_signature(self, node):
         self.new_state(0)
-        if node.parent['objtype'] in ('class', 'exception'):
-            self.add_text('%s ' % node.parent['objtype'])
+        if node.parent['desctype'] in ('class', 'exception'):
+            self.add_text('%s ' % node.parent['desctype'])
     def depart_desc_signature(self, node):
         # XXX: wrap signatures in a way that makes sense
         self.end_state(wrap=False, end=None)
@@ -430,38 +436,38 @@ class TextTranslator(nodes.NodeVisitor):
         raise nodes.SkipNode
 
     def visit_bullet_list(self, node):
-        self.list_counter.append(-1)
+        self._list_counter = -1
     def depart_bullet_list(self, node):
-        self.list_counter.pop()
+        pass
 
     def visit_enumerated_list(self, node):
-        self.list_counter.append(0)
+        self._list_counter = 0
     def depart_enumerated_list(self, node):
-        self.list_counter.pop()
+        pass
 
     def visit_definition_list(self, node):
-        self.list_counter.append(-2)
+        self._list_counter = -2
     def depart_definition_list(self, node):
-        self.list_counter.pop()
+        pass
 
     def visit_list_item(self, node):
-        if self.list_counter[-1] == -1:
+        if self._list_counter == -1:
             # bullet list
             self.new_state(2)
-        elif self.list_counter[-1] == -2:
+        elif self._list_counter == -2:
             # definition list
             pass
         else:
             # enumerated list
-            self.list_counter[-1] += 1
-            self.new_state(len(str(self.list_counter[-1])) + 2)
+            self._list_counter += 1
+            self.new_state(len(str(self._list_counter)) + 2)
     def depart_list_item(self, node):
-        if self.list_counter[-1] == -1:
+        if self._list_counter == -1:
             self.end_state(first='* ', end=None)
-        elif self.list_counter[-1] == -2:
+        elif self._list_counter == -2:
             pass
         else:
-            self.end_state(first='%s. ' % self.list_counter[-1], end=None)
+            self.end_state(first='%s. ' % self._list_counter, end=None)
 
     def visit_definition_list_item(self, node):
         self._li_has_classifier = len(node) >= 2 and \
@@ -704,11 +710,6 @@ class TextTranslator(nodes.NodeVisitor):
 
     def visit_meta(self, node):
         # only valid for HTML
-        raise nodes.SkipNode
-
-    def visit_raw(self, node):
-        if 'text' in node.get('format', '').split():
-            self.body.append(node.astext())
         raise nodes.SkipNode
 
     def unknown_visit(self, node):

@@ -5,7 +5,7 @@
 
     sphinx-build command-line handling.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -43,7 +43,6 @@ new and changed files
          -C        -- use no config file at all, only -D options
          -D <setting=value> -- override a setting in configuration
          -A <name=value>    -- pass a value into the templates, for HTML builder
-         -n        -- nit-picky mode, warn about all missing references
          -N        -- do not do colored output
          -q        -- no output on stdout, just warnings on stderr
          -Q        -- no output at all, not even warnings
@@ -62,7 +61,7 @@ def main(argv):
         nocolor()
 
     try:
-        opts, args = getopt.getopt(argv[1:], 'ab:t:d:c:CD:A:ng:NEqQWw:P')
+        opts, args = getopt.getopt(argv[1:], 'ab:t:d:c:CD:A:g:NEqQWw:P')
         allopts = set(opt[0] for opt in opts)
         srcdir = confdir = path.abspath(args[0])
         if not path.isdir(srcdir):
@@ -90,13 +89,14 @@ def main(argv):
     if err:
         return 1
 
-    buildername = None
-    force_all = freshenv = warningiserror = use_pdb = False
+    buildername = all_files = None
+    freshenv = warningiserror = use_pdb = False
     status = sys.stdout
     warning = sys.stderr
     error = sys.stderr
     warnfile = None
     confoverrides = {}
+    htmlcontext = {}
     tags = []
     doctreedir = path.join(outdir, '.doctrees')
     for opt, val in opts:
@@ -106,7 +106,7 @@ def main(argv):
             if filenames:
                 usage(argv, 'Cannot combine -a option and filenames.')
                 return 1
-            force_all = True
+            all_files = True
         elif opt == '-t':
             tags.append(val)
         elif opt == '-d':
@@ -142,9 +142,7 @@ def main(argv):
                 val = int(val)
             except ValueError:
                 pass
-            confoverrides['html_context.%s' % key] = val
-        elif opt == '-n':
-            confoverrides['nitpicky'] = True
+            htmlcontext[key] = val
         elif opt == '-N':
             nocolor()
         elif opt == '-E':
@@ -160,6 +158,7 @@ def main(argv):
             warnfile = val
         elif opt == '-P':
             use_pdb = True
+    confoverrides['html_context'] = htmlcontext
 
     if warning and warnfile:
         warnfp = open(warnfile, 'w')
@@ -170,7 +169,7 @@ def main(argv):
         app = Sphinx(srcdir, confdir, outdir, doctreedir, buildername,
                      confoverrides, status, warning, freshenv,
                      warningiserror, tags)
-        app.build(force_all, filenames)
+        app.build(all_files, filenames)
         return app.statuscode
     except KeyboardInterrupt:
         if use_pdb:
@@ -201,13 +200,10 @@ def main(argv):
                 tbpath = save_traceback()
                 print >>error, red('The full traceback has been saved '
                                    'in %s, if you want to report the '
-                                   'issue to the developers.' % tbpath)
+                                   'issue to the author.' % tbpath)
                 print >>error, ('Please also report this if it was a user '
                                 'error, so that a better error message '
                                 'can be provided next time.')
-                print >>error, (
-                    'Either send bugs to the mailing list at '
-                    '<http://groups.google.com/group/sphinx-dev/>,\n'
-                    'or report them in the tracker at '
-                    '<http://bitbucket.org/birkenfeld/sphinx/issues/>. Thanks!')
+                print >>error, ('Send reports to sphinx-dev@googlegroups.com. '
+                                'Thanks!')
             return 1

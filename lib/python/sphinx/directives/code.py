@@ -3,7 +3,7 @@
     sphinx.directives.code
     ~~~~~~~~~~~~~~~~~~~~~~
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -13,10 +13,11 @@ import codecs
 from os import path
 
 from docutils import nodes
-from docutils.parsers.rst import Directive, directives
+from docutils.parsers.rst import directives
 
 from sphinx import addnodes
 from sphinx.util import parselinenos
+from sphinx.util.compat import Directive, directive_dwim
 
 
 class Highlight(Directive):
@@ -80,15 +81,12 @@ class LiteralInclude(Directive):
     final_argument_whitespace = False
     option_spec = {
         'linenos': directives.flag,
-        'tab-width': int,
         'language': directives.unchanged_required,
         'encoding': directives.encoding,
         'pyobject': directives.unchanged_required,
         'lines': directives.unchanged_required,
         'start-after': directives.unchanged_required,
         'end-before': directives.unchanged_required,
-        'prepend': directives.unchanged_required,
-        'append': directives.unchanged_required,
     }
 
     def run(self):
@@ -102,7 +100,7 @@ class LiteralInclude(Directive):
             rel_fn = filename[1:]
         else:
             docdir = path.dirname(env.doc2path(env.docname, base=None))
-            rel_fn = path.join(docdir, filename)
+            rel_fn = path.normpath(path.join(docdir, filename))
         try:
             fn = path.join(env.srcdir, rel_fn)
         except UnicodeDecodeError:
@@ -117,10 +115,8 @@ class LiteralInclude(Directive):
                 line=self.lineno)]
 
         encoding = self.options.get('encoding', env.config.source_encoding)
-        codec_info = codecs.lookup(encoding)
         try:
-            f = codecs.StreamReaderWriter(open(fn, 'U'),
-                    codec_info[2], codec_info[3], 'strict')
+            f = codecs.open(fn, 'rU', encoding)
             lines = f.readlines()
             f.close()
         except (IOError, OSError):
@@ -154,30 +150,21 @@ class LiteralInclude(Directive):
             lines = [lines[i] for i in linelist]
 
         startafter = self.options.get('start-after')
-        endbefore  = self.options.get('end-before')
-        prepend    = self.options.get('prepend')
-        append     = self.options.get('append')
+        endbefore = self.options.get('end-before')
         if startafter is not None or endbefore is not None:
             use = not startafter
             res = []
             for line in lines:
-                if not use and startafter and startafter in line:
+                if not use and startafter in line:
                     use = True
-                elif use and endbefore and endbefore in line:
+                elif use and endbefore in line:
                     use = False
                     break
                 elif use:
                     res.append(line)
             lines = res
 
-        if prepend:
-           lines.insert(0, prepend + '\n')
-        if append:
-           lines.append(append + '\n')
-
         text = ''.join(lines)
-        if self.options.get('tab-width'):
-            text = text.expandtabs(self.options['tab-width'])
         retnode = nodes.literal_block(text, text, source=fn)
         retnode.line = 1
         if self.options.get('language', ''):
@@ -188,8 +175,8 @@ class LiteralInclude(Directive):
         return [retnode]
 
 
-directives.register_directive('highlight', Highlight)
-directives.register_directive('highlightlang', Highlight) # old
-directives.register_directive('code-block', CodeBlock)
-directives.register_directive('sourcecode', CodeBlock)
-directives.register_directive('literalinclude', LiteralInclude)
+directives.register_directive('highlight', directive_dwim(Highlight))
+directives.register_directive('highlightlang', directive_dwim(Highlight)) # old
+directives.register_directive('code-block', directive_dwim(CodeBlock))
+directives.register_directive('sourcecode', directive_dwim(CodeBlock))
+directives.register_directive('literalinclude', directive_dwim(LiteralInclude))

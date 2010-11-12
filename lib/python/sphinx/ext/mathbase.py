@@ -5,7 +5,7 @@
 
     Set up math support in source files and LaTeX/text output.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -108,20 +108,6 @@ def text_visit_eqref(self, node):
     raise nodes.SkipNode
 
 
-def man_visit_math(self, node):
-    self.body.append(node['latex'])
-    raise nodes.SkipNode
-
-def man_visit_displaymath(self, node):
-    self.visit_centered(node)
-def man_depart_displaymath(self, node):
-    self.depart_centered(node)
-
-def man_visit_eqref(self, node):
-    self.body.append(node['target'])
-    raise nodes.SkipNode
-
-
 def html_visit_eqref(self, node):
     self.body.append('<a href="#equation-%s">' % node['target'])
 
@@ -146,21 +132,18 @@ def number_equations(app, doctree, docname):
         node[0] = nodes.Text(num, num)
 
 
-def setup_math(app, htmlinlinevisitors, htmldisplayvisitors):
+def setup(app, htmlinlinevisitors, htmldisplayvisitors):
     app.add_node(math,
                  latex=(latex_visit_math, None),
                  text=(text_visit_math, None),
-                 man=(man_visit_math, None),
                  html=htmlinlinevisitors)
     app.add_node(displaymath,
                  latex=(latex_visit_displaymath, None),
                  text=(text_visit_displaymath, None),
-                 man=(man_visit_displaymath, man_depart_displaymath),
                  html=htmldisplayvisitors)
     app.add_node(eqref,
                  latex=(latex_visit_eqref, None),
                  text=(text_visit_eqref, None),
-                 man=(man_visit_eqref, None),
                  html=(html_visit_eqref, html_depart_eqref))
     app.add_role('math', math_role)
     app.add_role('eq', eq_role)

@@ -5,7 +5,7 @@
 
     Changelog builder.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -14,11 +14,9 @@ from os import path
 from cgi import escape
 
 from sphinx import package_dir
-from sphinx.util import copy_static_entry
-from sphinx.locale import _
+from sphinx.util import ensuredir, os_path, copy_static_entry
 from sphinx.theming import Theme
 from sphinx.builders import Builder
-from sphinx.util.osutil import ensuredir, os_path
 from sphinx.util.console import bold
 
 
@@ -95,7 +93,6 @@ class ChangesBuilder(Builder):
             'libchanges': sorted(libchanges.iteritems()),
             'apichanges': sorted(apichanges),
             'otherchanges': sorted(otherchanges.iteritems()),
-            'show_copyright': self.config.html_show_copyright,
             'show_sphinx': self.config.html_show_sphinx,
         }
         f = codecs.open(path.join(self.outdir, 'index.html'), 'w', 'utf8')
@@ -141,10 +138,11 @@ class ChangesBuilder(Builder):
                         self.theme.get_options({}).iteritems())
         copy_static_entry(path.join(package_dir, 'themes', 'default',
                                     'static', 'default.css_t'),
-                          self.outdir, self, themectx)
+                          path.join(self.outdir, 'default.css_t'),
+                          self, themectx)
         copy_static_entry(path.join(package_dir, 'themes', 'basic',
                                     'static', 'basic.css'),
-                          self.outdir, self)
+                          path.join(self.outdir, 'basic.css'), self)
 
     def hl(self, text, version):
         text = escape(text)

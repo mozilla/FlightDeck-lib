@@ -5,13 +5,11 @@
 
     Several HTML builders.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
 import os
-import sys
-import zlib
 import codecs
 import posixpath
 import cPickle as pickle
@@ -24,28 +22,30 @@ except ImportError:
 
 from docutils import nodes
 from docutils.io import DocTreeInput, StringOutput
-from docutils.core import Publisher
+from docutils.core import publish_parts
 from docutils.utils import new_document
 from docutils.frontend import OptionParser
 from docutils.readers.doctree import Reader as DoctreeReader
 
 from sphinx import package_dir, __version__
-from sphinx.util import jsonimpl, copy_static_entry
-from sphinx.util.osutil import SEP, os_path, relative_uri, ensuredir, \
-     movefile, ustrftime, copyfile
-from sphinx.util.nodes import inline_all_toctrees
-from sphinx.util.matching import patmatch, compile_matchers
-from sphinx.util.pycompat import any
+from sphinx.util import SEP, os_path, relative_uri, ensuredir, \
+    movefile, ustrftime, copy_static_entry, copyfile
 from sphinx.errors import SphinxError
-from sphinx.locale import _
 from sphinx.search import js_index
 from sphinx.theming import Theme
-from sphinx.builders import Builder
-from sphinx.application import ENV_PICKLE_FILENAME
+from sphinx.builders import Builder, ENV_PICKLE_FILENAME
 from sphinx.highlighting import PygmentsBridge
-from sphinx.util.console import bold, darkgreen, brown
+from sphinx.util.console import bold
 from sphinx.writers.html import HTMLWriter, HTMLTranslator, \
      SmartyPantsHTMLTranslator
+
+try:
+    import json
+except ImportError:
+    try:
+        import simplejson as json
+    except ImportError:
+        json = None
 
 #: the filename for the inventory of objects
 INVENTORY_FILENAME = 'objects.inv'
@@ -70,16 +70,7 @@ class StandaloneHTMLBuilder(Builder):
     embedded = False  # for things like HTML help or Qt help: suppresses sidebar
 
     # This is a class attribute because it is mutated by Sphinx.add_javascript.
-    script_files = ['_static/jquery.js', '_static/underscore.js',
-                    '_static/doctools.js']
-    # Dito for this one.
-    css_files = []
-
-    default_sidebars = ['localtoc.html', 'relations.html',
-                        'sourcelink.html', 'searchbox.html']
-
-    # cached publisher object for snippets
-    _publisher = None
+    script_files = ['_static/jquery.js', '_static/doctools.js']
 
     def init(self):
         # a hash of all config values that, if changed, cause a full rebuild
@@ -91,7 +82,7 @@ class StandaloneHTMLBuilder(Builder):
         self.init_templates()
         self.init_highlighter()
         self.init_translator_class()
-        if self.config.html_file_suffix is not None:
+        if self.config.html_file_suffix:
             self.out_suffix = self.config.html_file_suffix
 
         if self.config.html_link_suffix is not None:
@@ -100,24 +91,14 @@ class StandaloneHTMLBuilder(Builder):
             self.link_suffix = self.out_suffix
 
         if self.config.language is not None:
-            jsfile_list = [path.join(package_dir, 'locale',
-                self.config.language, 'LC_MESSAGES', 'sphinx.js'),
-                path.join(sys.prefix, 'share/sphinx/locale',
-                    self.config.language, 'sphinx.js')]
-
-            for jsfile in jsfile_list:
-                if path.isfile(jsfile):
-                    self.script_files.append('_static/translations.js')
-                    break
-
-    def get_theme_config(self):
-        return self.config.html_theme, self.config.html_theme_options
+            jsfile = path.join(package_dir, 'locale', self.config.language,
+                               'LC_MESSAGES', 'sphinx.js')
+            if path.isfile(jsfile):
+                self.script_files.append('_static/translations.js')
 
     def init_templates(self):
         Theme.init_themes(self)
-        themename, themeoptions = self.get_theme_config()
-        self.theme = Theme(themename)
-        self.theme_options = themeoptions.copy()
+        self.theme = Theme(self.config.html_theme)
         self.create_template_bridge()
         self.templates.init(self, self.theme)
 
@@ -129,8 +110,7 @@ class StandaloneHTMLBuilder(Builder):
             style = self.theme.get_confstr('theme', 'pygments_style', 'none')
         else:
             style = 'sphinx'
-        self.highlighter = PygmentsBridge('html', style,
-                                          self.config.trim_doctest_flags)
+        self.highlighter = PygmentsBridge('html', style)
 
     def init_translator_class(self):
         if self.config.html_translator_class:
@@ -181,7 +161,8 @@ class StandaloneHTMLBuilder(Builder):
             if docname not in self.env.all_docs:
                 yield docname
                 continue
-            targetname = self.get_outfilename(docname)
+            targetname = self.env.doc2path(docname, self.outdir,
+                                           self.out_suffix)
             try:
                 targetmtime = path.getmtime(targetname)
             except Exception:
@@ -197,28 +178,15 @@ class StandaloneHTMLBuilder(Builder):
 
     def render_partial(self, node):
         """Utility: Render a lone doctree node."""
-        if node is None:
-            return {'fragment': ''}
         doc = new_document('<partial node>')
         doc.append(node)
-
-        if self._publisher is None:
-            self._publisher = Publisher(
-                    source_class = DocTreeInput,
-                    destination_class=StringOutput)
-            self._publisher.set_components('standalone',
-                                           'restructuredtext', 'pseudoxml')
-
-        pub = self._publisher
-
-        pub.reader = DoctreeReader()
-        pub.writer = HTMLWriter(self)
-        pub.process_programmatic_settings(
-            None, {'output_encoding': 'unicode'}, None)
-        pub.set_source(doc, None)
-        pub.set_destination(None, None)
-        pub.publish()
-        return pub.writer.parts
+        return publish_parts(
+            doc,
+            source_class=DocTreeInput,
+            reader=DoctreeReader(),
+            writer=HTMLWriter(self),
+            settings_overrides={'output_encoding': 'unicode'}
+        )
 
     def prepare_writing(self, docnames):
         from sphinx.search import IndexBuilder
@@ -229,27 +197,6 @@ class StandaloneHTMLBuilder(Builder):
         self.docsettings = OptionParser(
             defaults=self.env.settings,
             components=(self.docwriter,)).get_default_values()
-        self.docsettings.compact_lists = bool(self.config.html_compact_lists)
-
-        # determine the additional indices to include
-        self.domain_indices = []
-        # html_domain_indices can be False/True or a list of index names
-        indices_config = self.config.html_domain_indices
-        if indices_config:
-            for domain in self.env.domains.itervalues():
-                for indexcls in domain.indices:
-                    indexname = '%s-%s' % (domain.name, indexcls.name)
-                    if isinstance(indices_config, list):
-                        if indexname not in indices_config:
-                            continue
-                    # deprecated config value
-                    if indexname == 'py-modindex' and \
-                           not self.config.html_use_modindex:
-                        continue
-                    content, collapse = indexcls(domain).generate()
-                    if content:
-                        self.domain_indices.append(
-                            (indexname, indexcls, content, collapse))
 
         # format the "last updated on" string, only once is enough since it
         # typically doesn't include the time of day
@@ -275,11 +222,9 @@ class StandaloneHTMLBuilder(Builder):
         rellinks = []
         if self.config.html_use_index:
             rellinks.append(('genindex', _('General Index'), 'I', _('index')))
-        for indexname, indexcls, content, collapse in self.domain_indices:
-            # if it has a short name
-            if indexcls.shortname:
-                rellinks.append((indexname, indexcls.localname,
-                                 '', indexcls.shortname))
+        if self.config.html_use_modindex and self.env.modules:
+            rellinks.append(('modindex', _('Global Module Index'),
+                             'M', _('modules')))
 
         if self.config.html_style is not None:
             stylename = self.config.html_style
@@ -299,13 +244,11 @@ class StandaloneHTMLBuilder(Builder):
             use_opensearch = self.config.html_use_opensearch,
             docstitle = self.config.html_title,
             shorttitle = self.config.html_short_title,
-            show_copyright = self.config.html_show_copyright,
             show_sphinx = self.config.html_show_sphinx,
             has_source = self.config.html_copy_source,
             show_source = self.config.html_show_sourcelink,
             file_suffix = self.out_suffix,
             script_files = self.script_files,
-            css_files = self.css_files,
             sphinx_version = __version__,
             style = stylename,
             rellinks = rellinks,
@@ -317,7 +260,8 @@ class StandaloneHTMLBuilder(Builder):
         if self.theme:
             self.globalcontext.update(
                 ('theme_' + key, val) for (key, val) in
-                self.theme.get_options(self.theme_options).iteritems())
+                self.theme.get_options(
+                self.config.html_theme_options).iteritems())
         self.globalcontext.update(self.config.html_context)
 
     def get_doc_context(self, docname, body, metatags):
@@ -408,17 +352,124 @@ class StandaloneHTMLBuilder(Builder):
     def finish(self):
         self.info(bold('writing additional files...'), nonl=1)
 
-        # pages from extensions
-        for pagelist in self.app.emit('html-collect-pages'):
-            for pagename, context, template in pagelist:
-                self.handle_page(pagename, context, template)
-
         # the global general index
-        if self.config.html_use_index:
-            self.write_genindex()
 
-        # the global domain-specific indices
-        self.write_domain_indices()
+        if self.config.html_use_index:
+            # the total count of lines for each index letter, used to distribute
+            # the entries into two columns
+            genindex = self.env.create_index(self)
+            indexcounts = []
+            for _, entries in genindex:
+                indexcounts.append(sum(1 + len(subitems)
+                                       for _, (_, subitems) in entries))
+
+            genindexcontext = dict(
+                genindexentries = genindex,
+                genindexcounts = indexcounts,
+                split_index = self.config.html_split_index,
+            )
+            self.info(' genindex', nonl=1)
+
+            if self.config.html_split_index:
+                self.handle_page('genindex', genindexcontext,
+                                 'genindex-split.html')
+                self.handle_page('genindex-all', genindexcontext,
+                                 'genindex.html')
+                for (key, entries), count in zip(genindex, indexcounts):
+                    ctx = {'key': key, 'entries': entries, 'count': count,
+                           'genindexentries': genindex}
+                    self.handle_page('genindex-' + key, ctx,
+                                     'genindex-single.html')
+            else:
+                self.handle_page('genindex', genindexcontext, 'genindex.html')
+
+        # the global module index
+
+        if self.config.html_use_modindex and self.env.modules:
+            # the sorted list of all modules, for the global module index
+            modules = sorted(((mn, (self.get_relative_uri('modindex', fn) +
+                                    '#module-' + mn, sy, pl, dep))
+                              for (mn, (fn, sy, pl, dep)) in
+                              self.env.modules.iteritems()),
+                             key=lambda x: x[0].lower())
+            # collect all platforms
+            platforms = set()
+            # sort out collapsable modules
+            modindexentries = []
+            letters = []
+            pmn = ''
+            num_toplevels = 0
+            num_collapsables = 0
+            cg = 0 # collapse group
+            fl = '' # first letter
+            for mn, (fn, sy, pl, dep) in modules:
+                pl = pl and pl.split(', ') or []
+                platforms.update(pl)
+
+                ignore = self.env.config['modindex_common_prefix']
+                ignore = sorted(ignore, key=len, reverse=True)
+                for i in ignore:
+                    if mn.startswith(i):
+                        mn = mn[len(i):]
+                        stripped = i
+                        break
+                else:
+                    stripped = ''
+
+                if fl != mn[0].lower() and mn[0] != '_':
+                    # heading
+                    letter = mn[0].upper()
+                    if letter not in letters:
+                        modindexentries.append(['', False, 0, False,
+                                                letter, '', [], False, ''])
+                        letters.append(letter)
+                tn = mn.split('.')[0]
+                if tn != mn:
+                    # submodule
+                    if pmn == tn:
+                        # first submodule - make parent collapsable
+                        modindexentries[-1][1] = True
+                        num_collapsables += 1
+                    elif not pmn.startswith(tn):
+                        # submodule without parent in list, add dummy entry
+                        cg += 1
+                        modindexentries.append([tn, True, cg, False, '', '',
+                                                [], False, stripped])
+                else:
+                    num_toplevels += 1
+                    cg += 1
+                modindexentries.append([mn, False, cg, (tn != mn), fn, sy, pl,
+                                        dep, stripped])
+                pmn = mn
+                fl = mn[0].lower()
+            platforms = sorted(platforms)
+
+            # apply heuristics when to collapse modindex at page load:
+            # only collapse if number of toplevel modules is larger than
+            # number of submodules
+            collapse = len(modules) - num_toplevels < num_toplevels
+
+            # As some parts of the module names may have been stripped, those
+            # names have changed, thus it is necessary to sort the entries.
+            if ignore:
+                def sorthelper(entry):
+                    name = entry[0]
+                    if name == '':
+                        # heading
+                        name = entry[4]
+                    return name.lower()
+
+                modindexentries.sort(key=sorthelper)
+                letters.sort()
+
+            modindexcontext = dict(
+                modindexentries = modindexentries,
+                platforms = platforms,
+                letters = letters,
+                collapse_modindex = collapse,
+            )
+            self.info(' modindex', nonl=1)
+            self.handle_page('modindex', modindexcontext, 'modindex.html')
 
         # the search page
         if self.name != 'htmlhelp':
@@ -437,83 +488,34 @@ class StandaloneHTMLBuilder(Builder):
 
         self.info()
 
-        self.copy_image_files()
-        self.copy_download_files()
-        self.copy_static_files()
-        self.write_buildinfo()
-
-        # dump the search index
-        self.handle_finish()
-
-    def write_genindex(self):
-        # the total count of lines for each index letter, used to distribute
-        # the entries into two columns
-        genindex = self.env.create_index(self)
-        indexcounts = []
-        for _, entries in genindex:
-            indexcounts.append(sum(1 + len(subitems)
-                                   for _, (_, subitems) in entries))
-
-        genindexcontext = dict(
-            genindexentries = genindex,
-            genindexcounts = indexcounts,
-            split_index = self.config.html_split_index,
-        )
-        self.info(' genindex', nonl=1)
-
-        if self.config.html_split_index:
-            self.handle_page('genindex', genindexcontext,
-                             'genindex-split.html')
-            self.handle_page('genindex-all', genindexcontext,
-                             'genindex.html')
-            for (key, entries), count in zip(genindex, indexcounts):
-                ctx = {'key': key, 'entries': entries, 'count': count,
-                       'genindexentries': genindex}
-                self.handle_page('genindex-' + key, ctx,
-                                 'genindex-single.html')
-        else:
-            self.handle_page('genindex', genindexcontext, 'genindex.html')
-
-    def write_domain_indices(self):
-        for indexname, indexcls, content, collapse in self.domain_indices:
-            indexcontext = dict(
-                indextitle = indexcls.localname,
-                content = content,
-                collapse_index = collapse,
-            )
-            self.info(' ' + indexname, nonl=1)
-            self.handle_page(indexname, indexcontext, 'domainindex.html')
-
-    def copy_image_files(self):
         # copy image files
         if self.images:
+            self.info(bold('copying images...'), nonl=True)
             ensuredir(path.join(self.outdir, '_images'))
-            for src in self.status_iterator(self.images, 'copying images... ',
-                                            brown, len(self.images)):
-                dest = self.images[src]
+            for src, dest in self.images.iteritems():
+                self.info(' '+src, nonl=1)
                 try:
                     copyfile(path.join(self.srcdir, src),
                              path.join(self.outdir, '_images', dest))
                 except Exception, err:
                     self.warn('cannot copy image file %r: %s' %
                               (path.join(self.srcdir, src), err))
+            self.info()
 
-    def copy_download_files(self):
         # copy downloadable files
         if self.env.dlfiles:
+            self.info(bold('copying downloadable files...'), nonl=True)
             ensuredir(path.join(self.outdir, '_downloads'))
-            for src in self.status_iterator(self.env.dlfiles,
-                                            'copying downloadable files... ',
-                                            brown, len(self.env.dlfiles)):
-                dest = self.env.dlfiles[src][1]
+            for src, (_, dest) in self.env.dlfiles.iteritems():
+                self.info(' '+src, nonl=1)
                 try:
                     copyfile(path.join(self.srcdir, src),
                              path.join(self.outdir, '_downloads', dest))
                 except Exception, err:
                     self.warn('cannot copy downloadable file %r: %s' %
                               (path.join(self.srcdir, src), err))
+            self.info()
 
-    def copy_static_files(self):
         # copy static files
         self.info(bold('copying static files... '), nonl=True)
         ensuredir(path.join(self.outdir, '_static'))
@@ -523,51 +525,36 @@ class StandaloneHTMLBuilder(Builder):
         f.close()
         # then, copy translations JavaScript file
         if self.config.language is not None:
-            jsfile_list = [path.join(package_dir, 'locale',
-                self.config.language, 'LC_MESSAGES', 'sphinx.js'),
-                path.join(sys.prefix, 'share/sphinx/locale',
-                    self.config.language, 'sphinx.js')]
-            for jsfile in jsfile_list:
-                if path.isfile(jsfile):
-                    copyfile(jsfile, path.join(self.outdir, '_static',
-                                               'translations.js'))
-                    break
-        # then, copy over theme-supplied static files
-        if self.theme:
-            themeentries = [path.join(themepath, 'static')
-                            for themepath in self.theme.get_dirchain()[::-1]]
-            for entry in themeentries:
-                copy_static_entry(entry, path.join(self.outdir, '_static'),
-                                  self, self.globalcontext)
+            jsfile = path.join(package_dir, 'locale', self.config.language,
+                               'LC_MESSAGES', 'sphinx.js')
+            if path.isfile(jsfile):
+                copyfile(jsfile, path.join(self.outdir, '_static',
+                                           'translations.js'))
         # then, copy over all user-supplied static files
-        staticentries = [path.join(self.confdir, spath)
-                         for spath in self.config.html_static_path]
-        matchers = compile_matchers(
-            self.config.exclude_patterns +
-            ['**/' + d for d in self.config.exclude_dirnames]
-        )
-        for entry in staticentries:
-            if not path.exists(entry):
-                self.warn('html_static_path entry %r does not exist' % entry)
+        if self.theme:
+            staticdirnames = [path.join(themepath, 'static')
+                              for themepath in self.theme.get_dirchain()[::-1]]
+        else:
+            staticdirnames = []
+        staticdirnames += [path.join(self.confdir, spath)
+                           for spath in self.config.html_static_path]
+        for staticdirname in staticdirnames:
+            if not path.isdir(staticdirname):
+                self.warn('static directory %r does not exist' % staticdirname)
                 continue
-            copy_static_entry(entry, path.join(self.outdir, '_static'), self,
-                              self.globalcontext, exclude_matchers=matchers)
-        # copy logo and favicon files if not already in static path
+            for filename in os.listdir(staticdirname):
+                if filename.startswith('.'):
+                    continue
+                fullname = path.join(staticdirname, filename)
+                targetname = path.join(self.outdir, '_static', filename)
+                copy_static_entry(fullname, targetname, self,
+                                  self.globalcontext)
+        # last, copy logo file (handled differently)
         if self.config.html_logo:
             logobase = path.basename(self.config.html_logo)
-            logotarget = path.join(self.outdir, '_static', logobase)
-            if not path.isfile(logotarget):
-                copyfile(path.join(self.confdir, self.config.html_logo),
-                         logotarget)
-        if self.config.html_favicon:
-            iconbase = path.basename(self.config.html_favicon)
-            icontarget = path.join(self.outdir, '_static', iconbase)
-            if not path.isfile(icontarget):
-                copyfile(path.join(self.confdir, self.config.html_favicon),
-                         icontarget)
-        self.info('done')
+            copyfile(path.join(self.confdir, self.config.html_logo),
+                     path.join(self.outdir, '_static', logobase))
 
-    def write_buildinfo(self):
         # write build info file
         fp = open(path.join(self.outdir, '.buildinfo'), 'w')
         try:
@@ -578,6 +565,11 @@ class StandaloneHTMLBuilder(Builder):
                      (self.config_hash, self.tags_hash))
         finally:
             fp.close()
+
+        self.info('done')
+
+        # dump the search index
+        self.handle_finish()
 
     def cleanup(self):
         # clean up theme stuff
@@ -598,7 +590,7 @@ class StandaloneHTMLBuilder(Builder):
                 # the parent node here.
                 continue
             uri = node['uri']
-            reference = nodes.reference('', '', internal=True)
+            reference = nodes.reference()
             if uri in self.images:
                 reference['refuri'] = posixpath.join(self.imgpath,
                                                      self.images[uri])
@@ -628,42 +620,12 @@ class StandaloneHTMLBuilder(Builder):
         if self.indexer is not None and title:
             self.indexer.feed(pagename, title, doctree)
 
-    def _get_local_toctree(self, docname, collapse=True, **kwds):
+    def _get_local_toctree(self, docname, collapse=True):
         return self.render_partial(self.env.get_toctree_for(
-            docname, self, collapse, **kwds))['fragment']
+            docname, self, collapse))['fragment']
 
     def get_outfilename(self, pagename):
         return path.join(self.outdir, os_path(pagename) + self.out_suffix)
-
-    def add_sidebars(self, pagename, ctx):
-        def has_wildcard(pattern):
-            return any(char in pattern for char in '*?[')
-        sidebars = None
-        matched = None
-        customsidebar = None
-        for pattern, patsidebars in self.config.html_sidebars.iteritems():
-            if patmatch(pagename, pattern):
-                if matched:
-                    if has_wildcard(pattern):
-                        # warn if both patterns contain wildcards
-                        if has_wildcard(matched):
-                            self.warn('page %s matches two patterns in '
-                                      'html_sidebars: %r and %r' %
-                                      (pagename, matched, pattern))
-                        # else the already matched pattern is more specific
-                        # than the present one, because it contains no wildcard
-                        continue
-                matched = pattern
-                sidebars = patsidebars
-        if sidebars is None:
-            # keep defaults
-            pass
-        elif isinstance(sidebars, basestring):
-            # 0.x compatible mode: insert custom sidebar before searchbox
-            customsidebar = sidebars
-            sidebars = None
-        ctx['sidebars'] = sidebars
-        ctx['customsidebar'] = customsidebar
 
     # --------- these are overwritten by the serialization builder
 
@@ -678,37 +640,25 @@ class StandaloneHTMLBuilder(Builder):
 
         def pathto(otheruri, resource=False,
                    baseuri=self.get_target_uri(pagename)):
-            if resource and '://' in otheruri:
-                # allow non-local resources given by scheme
-                return otheruri
-            elif not resource:
+            if not resource:
                 otheruri = self.get_target_uri(otheruri)
-            uri = relative_uri(baseuri, otheruri) or '#'
-            return uri
+            return relative_uri(baseuri, otheruri)
         ctx['pathto'] = pathto
         ctx['hasdoc'] = lambda name: name in self.env.all_docs
-        ctx['encoding'] = encoding = self.config.html_output_encoding
+        ctx['customsidebar'] = self.config.html_sidebars.get(pagename)
         ctx['toctree'] = lambda **kw: self._get_local_toctree(pagename, **kw)
-        self.add_sidebars(pagename, ctx)
         ctx.update(addctx)
 
         self.app.emit('html-page-context', pagename, templatename,
                       ctx, event_arg)
 
-        try:
-            output = self.templates.render(templatename, ctx)
-        except UnicodeError:
-            self.warn("a Unicode error occurred when rendering the page %s. "
-                      "Please make sure all config values that contain "
-                      "non-ASCII content are Unicode strings." % pagename)
-            return
-
+        output = self.templates.render(templatename, ctx)
         if not outfilename:
             outfilename = self.get_outfilename(pagename)
         # outfilename's path is in general different from self.outdir
         ensuredir(path.dirname(outfilename))
         try:
-            f = codecs.open(outfilename, 'w', encoding)
+            f = codecs.open(outfilename, 'w', 'utf-8')
             try:
                 f.write(output)
             finally:
@@ -723,39 +673,6 @@ class StandaloneHTMLBuilder(Builder):
             copyfile(self.env.doc2path(pagename), source_name)
 
     def handle_finish(self):
-        self.dump_search_index()
-        self.dump_inventory()
-
-    def dump_inventory(self):
-        self.info(bold('dumping object inventory... '), nonl=True)
-        f = open(path.join(self.outdir, INVENTORY_FILENAME), 'wb')
-        try:
-            f.write('# Sphinx inventory version 2\n')
-            f.write('# Project: %s\n' % self.config.project.encode('utf-8'))
-            f.write('# Version: %s\n' % self.config.version.encode('utf-8'))
-            f.write('# The remainder of this file is compressed using zlib.\n')
-            compressor = zlib.compressobj(9)
-            for domainname, domain in self.env.domains.iteritems():
-                for name, dispname, type, docname, anchor, prio in \
-                        domain.get_objects():
-                    if anchor.endswith(name):
-                        # this can shorten the inventory by as much as 25%
-                        anchor = anchor[:-len(name)] + '$'
-                    uri = self.get_target_uri(docname) + '#' + anchor
-                    if dispname == name:
-                        dispname = u'-'
-                    f.write(compressor.compress(
-                        '%s %s:%s %s %s %s\n' % (name.encode('utf-8'),
-                                                 domainname.encode('utf-8'),
-                                                 type.encode('utf-8'), prio,
-                                                 uri.encode('utf-8'),
-                                                 dispname.encode('utf-8'))))
-            f.write(compressor.flush())
-        finally:
-            f.close()
-        self.info('done')
-
-    def dump_search_index(self):
         self.info(bold('dumping search index... '), nonl=True)
         self.indexer.prune(self.env.all_docs)
         searchindexfn = path.join(self.outdir, self.searchindex_filename)
@@ -767,6 +684,21 @@ class StandaloneHTMLBuilder(Builder):
         finally:
             f.close()
         movefile(searchindexfn + '.tmp', searchindexfn)
+        self.info('done')
+
+        self.info(bold('dumping object inventory... '), nonl=True)
+        f = open(path.join(self.outdir, INVENTORY_FILENAME), 'w')
+        try:
+            f.write('# Sphinx inventory version 1\n')
+            f.write('# Project: %s\n' % self.config.project.encode('utf-8'))
+            f.write('# Version: %s\n' % self.config.version)
+            for modname, info in self.env.modules.iteritems():
+                f.write('%s mod %s\n' % (modname, self.get_target_uri(info[0])))
+            for refname, (docname, desctype) in self.env.descrefs.iteritems():
+                f.write('%s %s %s\n' % (refname, desctype,
+                                        self.get_target_uri(docname)))
+        finally:
+            f.close()
         self.info('done')
 
 
@@ -794,120 +726,6 @@ class DirectoryHTMLBuilder(StandaloneHTMLBuilder):
                                     'index' + self.out_suffix)
 
         return outfilename
-
-    def prepare_writing(self, docnames):
-        StandaloneHTMLBuilder.prepare_writing(self, docnames)
-        self.globalcontext['no_search_suffix'] = True
-
-
-class SingleFileHTMLBuilder(StandaloneHTMLBuilder):
-    """
-    A StandaloneHTMLBuilder subclass that puts the whole document tree on one
-    HTML page.
-    """
-    name = 'singlehtml'
-    copysource = False
-
-    def get_outdated_docs(self):
-        return 'all documents'
-
-    def get_target_uri(self, docname, typ=None):
-        if docname in self.env.all_docs:
-            # all references are on the same page...
-            return self.config.master_doc + self.out_suffix + \
-                   '#document-' + docname
-        else:
-            # chances are this is a html_additional_page
-            return docname + self.out_suffix
-
-    def get_relative_uri(self, from_, to, typ=None):
-        # ignore source
-        return self.get_target_uri(to, typ)
-
-    def fix_refuris(self, tree):
-        # fix refuris with double anchor
-        fname = self.config.master_doc + self.out_suffix
-        for refnode in tree.traverse(nodes.reference):
-            if 'refuri' not in refnode:
-                continue
-            refuri = refnode['refuri']
-            hashindex = refuri.find('#')
-            if hashindex < 0:
-                continue
-            hashindex = refuri.find('#', hashindex+1)
-            if hashindex >= 0:
-                refnode['refuri'] = fname + refuri[hashindex:]
-
-    def assemble_doctree(self):
-        master = self.config.master_doc
-        tree = self.env.get_doctree(master)
-        tree = inline_all_toctrees(self, set(), master, tree, darkgreen)
-        tree['docname'] = master
-        self.env.resolve_references(tree, master, self)
-        self.fix_refuris(tree)
-        return tree
-
-    def get_doc_context(self, docname, body, metatags):
-        # no relation links...
-        toc = self.env.get_toctree_for(self.config.master_doc, self, False)
-        # if there is no toctree, toc is None
-        if toc:
-            self.fix_refuris(toc)
-            toc = self.render_partial(toc)['fragment']
-            display_toc = True
-        else:
-            toc = ''
-            display_toc = False
-        return dict(
-            parents = [],
-            prev = None,
-            next = None,
-            docstitle = None,
-            title = self.config.html_title,
-            meta = None,
-            body = body,
-            metatags = metatags,
-            rellinks = [],
-            sourcename = '',
-            toc = toc,
-            display_toc = display_toc,
-        )
-
-    def write(self, *ignored):
-        docnames = self.env.all_docs
-
-        self.info(bold('preparing documents... '), nonl=True)
-        self.prepare_writing(docnames)
-        self.info('done')
-
-        self.info(bold('assembling single document... '), nonl=True)
-        doctree = self.assemble_doctree()
-        self.info()
-        self.info(bold('writing... '), nonl=True)
-        self.write_doc(self.config.master_doc, doctree)
-        self.info('done')
-
-    def finish(self):
-        # no indices or search pages are supported
-        self.info(bold('writing additional files...'), nonl=1)
-
-        # additional pages from conf.py
-        for pagename, template in self.config.html_additional_pages.items():
-            self.info(' '+pagename, nonl=1)
-            self.handle_page(pagename, {}, template)
-
-        if self.config.html_use_opensearch:
-            self.info(' opensearch', nonl=1)
-            fn = path.join(self.outdir, '_static', 'opensearch.xml')
-            self.handle_page('opensearch', {}, 'opensearch.xml', outfilename=fn)
-
-        self.info()
-
-        self.copy_image_files()
-        self.copy_download_files()
-        self.copy_static_files()
-        self.write_buildinfo()
-        self.dump_inventory()
 
 
 class SerializingHTMLBuilder(StandaloneHTMLBuilder):
@@ -943,7 +761,9 @@ class SerializingHTMLBuilder(StandaloneHTMLBuilder):
     def handle_page(self, pagename, ctx, templatename='page.html',
                     outfilename=None, event_arg=None):
         ctx['current_page_name'] = pagename
-        self.add_sidebars(pagename, ctx)
+        sidebarfile = self.config.html_sidebars.get(pagename)
+        if sidebarfile:
+            ctx['customsidebar'] = sidebarfile
 
         if not outfilename:
             outfilename = path.join(self.outdir,
@@ -1008,15 +828,15 @@ class JSONHTMLBuilder(SerializingHTMLBuilder):
     """
     A builder that dumps the generated HTML into JSON files.
     """
-    implementation = jsonimpl
-    indexer_format = jsonimpl
+    implementation = json
+    indexer_format = json
     name = 'json'
     out_suffix = '.fjson'
     globalcontext_filename = 'globalcontext.json'
     searchindex_filename = 'searchindex.json'
 
     def init(self):
-        if jsonimpl.json is None:
+        if json is None:
             raise SphinxError(
                 'The module simplejson (or json in Python >= 2.6) '
                 'is not available. The JSONHTMLBuilder builder will not work.')

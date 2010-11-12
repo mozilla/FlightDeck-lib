@@ -5,7 +5,7 @@
 
     The CheckExternalLinksBuilder class.
 
-    :copyright: Copyright 2007-2010 by the Sphinx team, see AUTHORS.
+    :copyright: Copyright 2007-2009 by the Sphinx team, see AUTHORS.
     :license: BSD, see LICENSE for details.
 """
 
@@ -16,7 +16,7 @@ from urllib2 import build_opener, HTTPError
 from docutils import nodes
 
 from sphinx.builders import Builder
-from sphinx.util.console import purple, red, darkgreen, darkgray
+from sphinx.util.console import purple, red, darkgreen
 
 # create an opener that will simulate a browser user-agent
 opener = build_opener()
@@ -65,17 +65,10 @@ class CheckExternalLinksBuilder(Builder):
             return
 
         lineno = None
-        while lineno is None:
+        while lineno is None and node:
             node = node.parent
-            if node is None:
-                break
             lineno = node.line
 
-        if len(uri) == 0 or uri[0:7] == 'mailto:' or uri[0:4] == 'ftp:':
-            return
-
-        if lineno:
-            self.info('(line %3d) ' % lineno, nonl=1)
         if uri[0:5] == 'http:' or uri[0:6] == 'https:':
             self.info(uri, nonl=1)
 
@@ -101,9 +94,15 @@ class CheckExternalLinksBuilder(Builder):
                 self.write_entry('redirected', docname,
                                  lineno, uri + ' to ' + s)
                 self.redirected[uri] = (r, s)
+        elif len(uri) == 0 or uri[0:7] == 'mailto:' or uri[0:4] == 'ftp:':
+            return
         else:
-            self.info(uri + ' - ' + darkgray('local'))
-            self.write_entry('local', docname, lineno, uri)
+            self.warn(uri + ' - ' + red('malformed!'))
+            self.write_entry('malformed', docname, lineno, uri)
+            if self.app.quiet:
+                self.warn('malformed link: %s' % uri,
+                          '%s:%s' % (self.env.doc2path(docname), lineno))
+            self.app.statuscode = 1
 
         if self.broken:
             self.app.statuscode = 1

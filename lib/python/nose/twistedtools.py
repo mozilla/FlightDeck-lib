@@ -72,9 +72,6 @@ def stop_reactor():
     global _twisted_thread
     reactor.stop()
     reactor_thread.join()
-    for p in reactor.getDelayedCalls():
-        if p.active():
-            p.cancel()
     _twisted_thread = None
 
 
