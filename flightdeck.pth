@@ -3,7 +3,7 @@ packages/anyjson
 packages/carrot
 packages/celery
 packages/django-celery
-packages/django-picklefield
+packages/django-picklefield/src
 packages/importlib
 packages/pyparsing
 packages/python-dateutil
