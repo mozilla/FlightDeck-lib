@@ -7,9 +7,13 @@ packages/django-picklefield/src
 packages/importlib
 packages/pyparsing
 packages/python-dateutil
+packages/simplejson/
+packages/thrift/
+packages/urllib3/
 src/check
 src/commonware
 src/django-haystack
 src/django-nose
+src/pyes
 src/python-ecdsa
 src/test-utils
