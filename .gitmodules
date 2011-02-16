@@ -16,3 +16,6 @@
 [submodule "src/commonware"]
 	path = src/commonware
 	url = git://github.com/jsocol/commonware.git
+[submodule "src/schematic"]
+	path = src/schematic
+	url = git://github.com/jbalogh/schematic.git
