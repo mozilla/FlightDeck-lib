@@ -14,6 +14,7 @@ src/check
 src/commonware
 src/django-haystack
 src/django-nose
+src/nuggets
 src/pyes
 src/python-ecdsa
 src/test-utils
