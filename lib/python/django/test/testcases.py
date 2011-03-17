@@ -11,6 +11,7 @@ from django.db import transaction, connections, DEFAULT_DB_ALIAS
 from django.http import QueryDict
 from django.test import _doctest as doctest
 from django.test.client import Client
+from django.test.utils import get_warnings_state, restore_warnings_state
 from django.utils import simplejson
 from django.utils.encoding import smart_str
 
@@ -274,9 +275,20 @@ class TransactionTestCase(unittest.TestCase):
         """ Performs any post-test things. This includes:
 
             * Putting back the original ROOT_URLCONF if it was changed.
+            * Force closing the connection, so that the next test gets
+              a clean cursor.
         """
         self._fixture_teardown()
         self._urlconf_teardown()
+        # Some DB cursors include SQL statements as part of cursor
+        # creation. If you have a test that does rollback, the effect
+        # of these statements is lost, which can effect the operation
+        # of tests (e.g., losing a timezone setting causing objects to
+        # be created with the wrong time).
+        # To make sure this doesn't happen, get a clean connection at the
+        # start of every test.
+        for connection in connections.all():
+            connection.close()
 
     def _fixture_teardown(self):
         pass
@@ -285,6 +297,19 @@ class TransactionTestCase(unittest.TestCase):
         if hasattr(self, '_old_root_urlconf'):
             settings.ROOT_URLCONF = self._old_root_urlconf
             clear_url_caches()
+
+    def save_warnings_state(self):
+        """
+        Saves the state of the warnings module
+        """
+        self._warnings_state = get_warnings_state()
+
+    def restore_warnings_state(self):
+        """
+        Restores the sate of the warnings module to the state
+        saved by save_warnings_state()
+        """
+        restore_warnings_state(self._warnings_state)
 
     def assertRedirects(self, response, expected_url, status_code=302,
                         target_status_code=200, host=None, msg_prefix=''):
@@ -299,7 +324,7 @@ class TransactionTestCase(unittest.TestCase):
 
         if hasattr(response, 'redirect_chain'):
             # The request was a followed redirect
-            self.failUnless(len(response.redirect_chain) > 0,
+            self.assertTrue(len(response.redirect_chain) > 0,
                 msg_prefix + "Response didn't redirect as expected: Response"
                 " code was %d (expected %d)" %
                     (response.status_code, status_code))
@@ -413,7 +438,7 @@ class TransactionTestCase(unittest.TestCase):
                 if field:
                     if field in context[form].errors:
                         field_errors = context[form].errors[field]
-                        self.failUnless(err in field_errors,
+                        self.assertTrue(err in field_errors,
                             msg_prefix + "The field '%s' on form '%s' in"
                             " context %d does not contain the error '%s'"
                             " (actual errors: %s)" %
@@ -428,7 +453,7 @@ class TransactionTestCase(unittest.TestCase):
                                       (form, i, field))
                 else:
                     non_field_errors = context[form].non_field_errors()
-                    self.failUnless(err in non_field_errors,
+                    self.assertTrue(err in non_field_errors,
                         msg_prefix + "The form '%s' in context %d does not"
                         " contain the non-field error '%s'"
                         " (actual errors: %s)" %
@@ -448,7 +473,7 @@ class TransactionTestCase(unittest.TestCase):
         template_names = [t.name for t in to_list(response.template)]
         if not template_names:
             self.fail(msg_prefix + "No templates used to render the response")
-        self.failUnless(template_name in template_names,
+        self.assertTrue(template_name in template_names,
             msg_prefix + "Template '%s' was not a template used to render"
             " the response. Actual template(s) used: %s" %
                 (template_name, u', '.join(template_names)))
@@ -462,7 +487,7 @@ class TransactionTestCase(unittest.TestCase):
             msg_prefix += ": "
 
         template_names = [t.name for t in to_list(response.template)]
-        self.failIf(template_name in template_names,
+        self.assertFalse(template_name in template_names,
             msg_prefix + "Template '%s' was used unexpectedly in rendering"
             " the response" % template_name)
 
@@ -527,6 +552,3 @@ class TestCase(TransactionTestCase):
         for db in databases:
             transaction.rollback(using=db)
             transaction.leave_transaction_management(using=db)
-
-        for connection in connections.all():
-            connection.close()

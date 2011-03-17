@@ -96,9 +96,29 @@ class AdminFileWidget(forms.FileInput):
         output = []
         if value and hasattr(value, "url"):
             output.append('%s <a target="_blank" href="%s">%s</a> <br />%s ' % \
-                (_('Currently:'), value.url, value, _('Change:')))
+                (_('Currently:'), escape(value.url), escape(value), _('Change:')))
         output.append(super(AdminFileWidget, self).render(name, value, attrs))
         return mark_safe(u''.join(output))
+
+def url_params_from_lookup_dict(lookups):
+    """
+    Converts the type of lookups specified in a ForeignKey limit_choices_to
+    attribute to a dictionary of query parameters
+    """
+    params = {}
+    if lookups and hasattr(lookups, 'items'):
+        items = []
+        for k, v in lookups.items():
+            if isinstance(v, list):
+                v = u','.join([str(x) for x in v])
+            elif isinstance(v, bool):
+                # See django.db.fields.BooleanField.get_prep_lookup
+                v = ('0', '1')[v]
+            else:
+                v = unicode(v)
+            items.append((k, v))
+        params.update(dict(items))
+    return params
 
 class ForeignKeyRawIdWidget(forms.TextInput):
     """
@@ -116,33 +136,23 @@ class ForeignKeyRawIdWidget(forms.TextInput):
         related_url = '../../../%s/%s/' % (self.rel.to._meta.app_label, self.rel.to._meta.object_name.lower())
         params = self.url_parameters()
         if params:
-            url = '?' + '&amp;'.join(['%s=%s' % (k, v) for k, v in params.items()])
+            url = u'?' + u'&amp;'.join([u'%s=%s' % (k, v) for k, v in params.items()])
         else:
-            url = ''
+            url = u''
         if not attrs.has_key('class'):
             attrs['class'] = 'vForeignKeyRawIdAdminField' # The JavaScript looks for this hook.
         output = [super(ForeignKeyRawIdWidget, self).render(name, value, attrs)]
         # TODO: "id_" is hard-coded here. This should instead use the correct
         # API to determine the ID dynamically.
-        output.append('<a href="%s%s" class="related-lookup" id="lookup_id_%s" onclick="return showRelatedObjectLookupPopup(this);"> ' % \
+        output.append(u'<a href="%s%s" class="related-lookup" id="lookup_id_%s" onclick="return showRelatedObjectLookupPopup(this);"> ' % \
             (related_url, url, name))
-        output.append('<img src="%simg/admin/selector-search.gif" width="16" height="16" alt="%s" /></a>' % (settings.ADMIN_MEDIA_PREFIX, _('Lookup')))
+        output.append(u'<img src="%simg/admin/selector-search.gif" width="16" height="16" alt="%s" /></a>' % (settings.ADMIN_MEDIA_PREFIX, _('Lookup')))
         if value:
             output.append(self.label_for_value(value))
         return mark_safe(u''.join(output))
 
     def base_url_parameters(self):
-        params = {}
-        if self.rel.limit_choices_to and hasattr(self.rel.limit_choices_to, 'items'):
-            items = []
-            for k, v in self.rel.limit_choices_to.items():
-                if isinstance(v, list):
-                    v = ','.join([str(x) for x in v])
-                else:
-                    v = str(v)
-                items.append((k, v))
-            params.update(dict(items))
-        return params
+        return url_params_from_lookup_dict(self.rel.limit_choices_to)
 
     def url_parameters(self):
         from django.contrib.admin.views.main import TO_FIELD_VAR
@@ -154,22 +164,21 @@ class ForeignKeyRawIdWidget(forms.TextInput):
         key = self.rel.get_related_field().name
         try:
             obj = self.rel.to._default_manager.using(self.db).get(**{key: value})
-        except self.rel.to.DoesNotExist:
+            return '&nbsp;<strong>%s</strong>' % escape(truncate_words(obj, 14))
+        except (ValueError, self.rel.to.DoesNotExist):
             return ''
-        return '&nbsp;<strong>%s</strong>' % escape(truncate_words(obj, 14))
 
 class ManyToManyRawIdWidget(ForeignKeyRawIdWidget):
     """
     A Widget for displaying ManyToMany ids in the "raw_id" interface rather than
     in a <select multiple> box.
     """
-    def __init__(self, rel, attrs=None, using=None):
-        super(ManyToManyRawIdWidget, self).__init__(rel, attrs, using=None)
-
     def render(self, name, value, attrs=None):
+        if attrs is None:
+            attrs = {}
         attrs['class'] = 'vManyToManyRawIdAdminField'
         if value:
-            value = ','.join([str(v) for v in value])
+            value = ','.join([force_unicode(v) for v in value])
         else:
             value = ''
         return super(ManyToManyRawIdWidget, self).render(name, value, attrs)

@@ -64,29 +64,10 @@ def capfirst(value):
 capfirst.is_safe=True
 capfirst = stringfilter(capfirst)
 
-_base_js_escapes = (
-    ('\\', r'\u005C'),
-    ('\'', r'\u0027'),
-    ('"', r'\u0022'),
-    ('>', r'\u003E'),
-    ('<', r'\u003C'),
-    ('&', r'\u0026'),
-    ('=', r'\u003D'),
-    ('-', r'\u002D'),
-    (';', r'\u003B'),
-    (u'\u2028', r'\u2028'),
-    (u'\u2029', r'\u2029')
-)
-
-# Escape every ASCII character with a value less than 32.
-_js_escapes = (_base_js_escapes +
-               tuple([('%c' % z, '\\u%04X' % z) for z in range(32)]))
-
 def escapejs(value):
     """Hex encodes characters for use in JavaScript strings."""
-    for bad, good in _js_escapes:
-        value = value.replace(bad, good)
-    return value
+    from django.utils.html import escapejs
+    return escapejs(value)
 escapejs = stringfilter(escapejs)
 
 def fix_ampersands(value):
@@ -601,6 +582,10 @@ def unordered_list(value, autoescape=None):
         first_item, second_item = list_
         if second_item == []:
             return [first_item], True
+        try:
+            it = iter(second_item)  # see if second item is iterable
+        except TypeError:
+            return list_, False
         old_style_list = True
         new_second_item = []
         for sublist in second_item:
@@ -731,7 +716,6 @@ timesince.is_safe = False
 def timeuntil(value, arg=None):
     """Formats a date as the time until that date (i.e. "4 days, 6 hours")."""
     from django.utils.timesince import timeuntil
-    from datetime import datetime
     if not value:
         return u''
     try:
@@ -805,15 +789,17 @@ def filesizeformat(bytes):
     try:
         bytes = float(bytes)
     except (TypeError,ValueError,UnicodeDecodeError):
-        return u"0 bytes"
+        return ungettext("%(size)d byte", "%(size)d bytes", 0) % {'size': 0}
+
+    filesize_number_format = lambda value: formats.number_format(round(value, 1), 1)
 
     if bytes < 1024:
         return ungettext("%(size)d byte", "%(size)d bytes", bytes) % {'size': bytes}
     if bytes < 1024 * 1024:
-        return ugettext("%.1f KB") % (bytes / 1024)
+        return ugettext("%s KB") % filesize_number_format(bytes / 1024)
     if bytes < 1024 * 1024 * 1024:
-        return ugettext("%.1f MB") % (bytes / (1024 * 1024))
-    return ugettext("%.1f GB") % (bytes / (1024 * 1024 * 1024))
+        return ugettext("%s MB") % filesize_number_format(bytes / (1024 * 1024))
+    return ugettext("%s GB") % filesize_number_format(bytes / (1024 * 1024 * 1024))
 filesizeformat.is_safe = True
 
 def pluralize(value, arg=u's'):

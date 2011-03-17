@@ -1,6 +1,7 @@
 from django.contrib.admin.filterspecs import FilterSpec
 from django.contrib.admin.options import IncorrectLookupParameters
 from django.contrib.admin.util import quote
+from django.core.exceptions import SuspiciousOperation
 from django.core.paginator import Paginator, InvalidPage
 from django.db import models
 from django.db.models.query import QuerySet
@@ -116,7 +117,7 @@ class ChangeList(object):
             try:
                 result_list = paginator.page(self.page_num+1).object_list
             except InvalidPage:
-                result_list = ()
+                raise IncorrectLookupParameters
 
         self.result_count = result_count
         self.full_result_count = full_result_count
@@ -178,14 +179,21 @@ class ChangeList(object):
 
             # if key ends with __in, split parameter into separate values
             if key.endswith('__in'):
-                lookup_params[key] = value.split(',')
+                value = value.split(',')
+                lookup_params[key] = value
 
             # if key ends with __isnull, special case '' and false
             if key.endswith('__isnull'):
                 if value.lower() in ('', 'false'):
-                    lookup_params[key] = False
+                    value = False
                 else:
-                    lookup_params[key] = True
+                    value = True
+                lookup_params[key] = value
+
+            if not self.model_admin.lookup_allowed(key, value):
+                raise SuspiciousOperation(
+                    "Filtering by %s not allowed" % key
+                )
 
         # Apply lookup parameters from the query string.
         try:
@@ -193,7 +201,7 @@ class ChangeList(object):
         # Naked except! Because we don't have any other way of validating "params".
         # They might be invalid if the keyword arguments are incorrect, or if the
         # values are not in the correct type, so we might get FieldError, ValueError,
-        # ValicationError, or ? from a custom field that raises yet something else 
+        # ValicationError, or ? from a custom field that raises yet something else
         # when handed impossible data.
         except:
             raise IncorrectLookupParameters

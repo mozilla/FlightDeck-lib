@@ -2,6 +2,7 @@ import datetime
 import os
 import re
 import sys
+import types
 
 from django.conf import settings
 from django.http import HttpResponse, HttpResponseServerError, HttpResponseNotFound
@@ -87,7 +88,10 @@ class ExceptionReporter:
             for loader in template_source_loaders:
                 try:
                     module = import_module(loader.__module__)
-                    source_list_func = module.get_template_sources
+                    if hasattr(loader, '__class__'):
+                        source_list_func = loader.get_template_sources
+                    else: # NOTE: Remember to remove this branch when we deprecate old template loaders in 1.4
+                        source_list_func = module.get_template_sources
                     # NOTE: This assumes exc_value is the name of the template that
                     # the loader attempted to load.
                     template_list = [{'name': t, 'exists': os.path.exists(t)} \
@@ -96,7 +100,7 @@ class ExceptionReporter:
                     template_list = []
                 if hasattr(loader, '__class__'):
                     loader_name = loader.__module__ + '.' + loader.__class__.__name__
-                else:
+                else: # NOTE: Remember to remove this branch when we deprecate old template loaders in 1.4
                     loader_name = loader.__module__ + '.' + loader.__name__
                 self.loader_debug_info.append({
                     'loader': loader_name,
@@ -275,8 +279,13 @@ def technical_404_response(request, exception):
             # tried exists but is an empty list. The URLconf must've been empty.
             return empty_urlconf(request)
 
+    urlconf = getattr(request, 'urlconf', settings.ROOT_URLCONF)
+    if isinstance(urlconf, types.ModuleType):
+        urlconf = urlconf.__name__
+
     t = Template(TECHNICAL_404_TEMPLATE, name='Technical 404 template')
     c = Context({
+        'urlconf': urlconf,
         'root_urlconf': settings.ROOT_URLCONF,
         'request_path': request.path_info[1:], # Trim leading slash
         'urlpatterns': tried,
@@ -773,7 +782,7 @@ TECHNICAL_404_TEMPLATE = """
   <div id="info">
     {% if urlpatterns %}
       <p>
-      Using the URLconf defined in <code>{{ settings.ROOT_URLCONF }}</code>,
+      Using the URLconf defined in <code>{{ urlconf }}</code>,
       Django tried these URL patterns, in this order:
       </p>
       <ol>

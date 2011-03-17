@@ -176,9 +176,20 @@ class RelatedField(object):
         # the primary key may itself be an object - so we need to keep drilling
         # down until we hit a value that can be used for a comparison.
         v = value
+
+        # In the case of an FK to 'self', this check allows to_field to be used
+        # for both forwards and reverse lookups across the FK. (For normal FKs,
+        # it's only relevant for forward lookups).
+        if isinstance(v, self.rel.to):
+            field_name = getattr(self.rel, "field_name", None)
+        else:
+            field_name = None
         try:
             while True:
-                v = getattr(v, v._meta.pk.name)
+                if field_name is None:
+                    field_name = v._meta.pk.name
+                v = getattr(v, field_name)
+                field_name = None
         except AttributeError:
             pass
         except exceptions.ObjectDoesNotExist:
@@ -420,7 +431,7 @@ class ForeignRelatedObjectsDescriptor(object):
             def create(self, **kwargs):
                 kwargs.update({rel_field.name: instance})
                 db = router.db_for_write(rel_model, instance=instance)
-                return super(RelatedManager, self).using(db).create(**kwargs)
+                return super(RelatedManager, self.db_manager(db)).create(**kwargs)
             create.alters_data = True
 
             def get_or_create(self, **kwargs):
@@ -428,7 +439,7 @@ class ForeignRelatedObjectsDescriptor(object):
                 # ForeignRelatedObjectsDescriptor knows about.
                 kwargs.update({rel_field.name: instance})
                 db = router.db_for_write(rel_model, instance=instance)
-                return super(RelatedManager, self).using(db).get_or_create(**kwargs)
+                return super(RelatedManager, self.db_manager(db)).get_or_create(**kwargs)
             get_or_create.alters_data = True
 
             # remove() and clear() are only provided if the ForeignKey can have a value of null.
@@ -517,7 +528,7 @@ def create_many_related_manager(superclass, rel=False):
                 opts = through._meta
                 raise AttributeError("Cannot use create() on a ManyToManyField which specifies an intermediary model. Use %s.%s's Manager instead." % (opts.app_label, opts.object_name))
             db = router.db_for_write(self.instance.__class__, instance=self.instance)
-            new_obj = super(ManyRelatedManager, self).using(db).create(**kwargs)
+            new_obj = super(ManyRelatedManager, self.db_manager(db)).create(**kwargs)
             self.add(new_obj)
             return new_obj
         create.alters_data = True
@@ -525,7 +536,7 @@ def create_many_related_manager(superclass, rel=False):
         def get_or_create(self, **kwargs):
             db = router.db_for_write(self.instance.__class__, instance=self.instance)
             obj, created = \
-                super(ManyRelatedManager, self).using(db).get_or_create(**kwargs)
+                super(ManyRelatedManager, self.db_manager(db)).get_or_create(**kwargs)
             # We only need to add() if created because if we got an object back
             # from get() then the relationship already exists.
             if created:
@@ -553,7 +564,7 @@ def create_many_related_manager(superclass, rel=False):
                         raise TypeError("'%s' instance expected" % self.model._meta.object_name)
                     else:
                         new_ids.add(obj)
-                db = router.db_for_write(self.through.__class__, instance=self.instance)
+                db = router.db_for_write(self.through, instance=self.instance)
                 vals = self.through._default_manager.using(db).values_list(target_field_name, flat=True)
                 vals = vals.filter(**{
                     source_field_name: self._pk_val,
@@ -601,7 +612,7 @@ def create_many_related_manager(superclass, rel=False):
                         instance=self.instance, reverse=self.reverse,
                         model=self.model, pk_set=old_ids)
                 # Remove the specified objects from the join table
-                db = router.db_for_write(self.through.__class__, instance=self.instance)
+                db = router.db_for_write(self.through, instance=self.instance)
                 self.through._default_manager.using(db).filter(**{
                     source_field_name: self._pk_val,
                     '%s__in' % target_field_name: old_ids
@@ -621,7 +632,7 @@ def create_many_related_manager(superclass, rel=False):
                 signals.m2m_changed.send(sender=rel.through, action="pre_clear",
                     instance=self.instance, reverse=self.reverse,
                     model=self.model, pk_set=None)
-            db = router.db_for_write(self.through.__class__, instance=self.instance)
+            db = router.db_for_write(self.through, instance=self.instance)
             self.through._default_manager.using(db).filter(**{
                 source_field_name: self._pk_val
             }).delete()
@@ -829,7 +840,10 @@ class ForeignKey(RelatedField, Field):
         if value is None:
             return
 
-        qs = self.rel.to._default_manager.filter(**{self.rel.field_name:value})
+        using = router.db_for_read(model_instance.__class__, instance=model_instance)
+        qs = self.rel.to._default_manager.using(using).filter(
+                **{self.rel.field_name: value}
+             )
         qs = qs.complex_filter(self.rel.limit_choices_to)
         if not qs.exists():
             raise exceptions.ValidationError(self.error_messages['invalid'] % {
@@ -881,6 +895,8 @@ class ForeignKey(RelatedField, Field):
         # don't get a related descriptor.
         if not self.rel.is_hidden():
             setattr(cls, related.get_accessor_name(), ForeignRelatedObjectsDescriptor(related))
+            if self.rel.limit_choices_to:
+                cls._meta.related_fkey_lookups.append(self.rel.limit_choices_to)
         if self.rel.field_name is None:
             self.rel.field_name = cls._meta.pk.name
 
@@ -1129,6 +1145,11 @@ class ManyToManyField(RelatedField, Field):
 
         self.m2m_field_name = curry(self._get_m2m_attr, related, 'name')
         self.m2m_reverse_field_name = curry(self._get_m2m_reverse_attr, related, 'name')
+
+        get_m2m_rel = curry(self._get_m2m_attr, related, 'rel')
+        self.m2m_target_field_name = lambda: get_m2m_rel().field_name
+        get_m2m_reverse_rel = curry(self._get_m2m_reverse_attr, related, 'rel')
+        self.m2m_reverse_target_field_name = lambda: get_m2m_reverse_rel().field_name
 
     def set_attributes_from_rel(self):
         pass

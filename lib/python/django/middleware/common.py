@@ -80,9 +80,9 @@ class CommonMiddleware(object):
         return http.HttpResponsePermanentRedirect(newurl)
 
     def process_response(self, request, response):
-        "Check for a flat page (for 404s) and calculate the Etag, if needed."
+        "Send broken link emails and calculate the Etag, if needed."
         if response.status_code == 404:
-            if settings.SEND_BROKEN_LINK_EMAILS:
+            if settings.SEND_BROKEN_LINK_EMAILS and not settings.DEBUG:
                 # If the referrer was from an internal link or a non-search-engine site,
                 # send a note to the managers.
                 domain = request.get_host()
@@ -94,7 +94,8 @@ class CommonMiddleware(object):
                     ip = request.META.get('REMOTE_ADDR', '<none>')
                     mail_managers("Broken %slink on %s" % ((is_internal and 'INTERNAL ' or ''), domain),
                         "Referrer: %s\nRequested URL: %s\nUser agent: %s\nIP address: %s\n" \
-                                  % (referer, request.get_full_path(), ua, ip))
+                                  % (referer, request.get_full_path(), ua, ip),
+                                  fail_silently=True)
                 return response
 
         # Use ETags, if requested.

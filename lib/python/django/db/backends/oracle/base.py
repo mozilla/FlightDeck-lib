@@ -6,16 +6,38 @@ Requires cx_Oracle: http://cx-oracle.sourceforge.net/
 
 
 import datetime
-import os
 import sys
 import time
 from decimal import Decimal
 
-# Oracle takes client-side character set encoding from the environment.
-os.environ['NLS_LANG'] = '.UTF8'
-# This prevents unicode from getting mangled by getting encoded into the
-# potentially non-unicode database character set.
-os.environ['ORA_NCHAR_LITERAL_REPLACE'] = 'TRUE'
+
+def _setup_environment(environ):
+    import platform
+    # Cygwin requires some special voodoo to set the environment variables
+    # properly so that Oracle will see them.
+    if platform.system().upper().startswith('CYGWIN'):
+        try:
+            import ctypes
+        except ImportError, e:
+            from django.core.exceptions import ImproperlyConfigured
+            raise ImproperlyConfigured("Error loading ctypes: %s; "
+                                       "the Oracle backend requires ctypes to "
+                                       "operate correctly under Cygwin." % e)
+        kernel32 = ctypes.CDLL('kernel32')
+        for name, value in environ:
+            kernel32.SetEnvironmentVariableA(name, value)
+    else:
+        import os
+        os.environ.update(environ)
+
+_setup_environment([
+    # Oracle takes client-side character set encoding from the environment.
+    ('NLS_LANG', '.UTF8'),
+    # This prevents unicode from getting mangled by getting encoded into the
+    # potentially non-unicode database character set.
+    ('ORA_NCHAR_LITERAL_REPLACE', 'TRUE'),
+])
+
 
 try:
     import cx_Oracle as Database
@@ -178,6 +200,9 @@ WHEN (new.%(col_name)s IS NULL)
             return "UPPER(%s)"
         return "%s"
 
+    def max_in_list_size(self):
+        return 1000
+
     def max_name_length(self):
         return 30
 
@@ -310,9 +335,24 @@ WHEN (new.%(col_name)s IS NULL)
         return super(DatabaseOperations, self).combine_expression(connector, sub_expressions)
 
 
+class _UninitializedOperatorsDescriptor(object):
+
+    def __get__(self, instance, owner):
+        # If connection.operators is looked up before a connection has been
+        # created, transparently initialize connection.operators to avert an
+        # AttributeError.
+        if instance is None:
+            raise AttributeError("operators not available as class attribute")
+        # Creating a cursor will initialize the operators.
+        instance.cursor().close()
+        return instance.__dict__['operators']
+
+
 class DatabaseWrapper(BaseDatabaseWrapper):
 
-    operators = {
+    operators = _UninitializedOperatorsDescriptor()
+
+    _standard_operators = {
         'exact': '= %s',
         'iexact': '= UPPER(%s)',
         'contains': "LIKE TRANSLATE(%s USING NCHAR_CS) ESCAPE TRANSLATE('\\' USING NCHAR_CS)",
@@ -326,11 +366,21 @@ class DatabaseWrapper(BaseDatabaseWrapper):
         'istartswith': "LIKE UPPER(TRANSLATE(%s USING NCHAR_CS)) ESCAPE TRANSLATE('\\' USING NCHAR_CS)",
         'iendswith': "LIKE UPPER(TRANSLATE(%s USING NCHAR_CS)) ESCAPE TRANSLATE('\\' USING NCHAR_CS)",
     }
-    oracle_version = None
+
+    _likec_operators = _standard_operators.copy()
+    _likec_operators.update({
+        'contains': "LIKEC %s ESCAPE '\\'",
+        'icontains': "LIKEC UPPER(%s) ESCAPE '\\'",
+        'startswith': "LIKEC %s ESCAPE '\\'",
+        'endswith': "LIKEC %s ESCAPE '\\'",
+        'istartswith': "LIKEC UPPER(%s) ESCAPE '\\'",
+        'iendswith': "LIKEC UPPER(%s) ESCAPE '\\'",
+    })
 
     def __init__(self, *args, **kwargs):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
 
+        self.oracle_version = None
         self.features = DatabaseFeatures()
         self.ops = DatabaseOperations()
         self.client = DatabaseClient(self)
@@ -343,9 +393,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     def _connect_string(self):
         settings_dict = self.settings_dict
-        if len(settings_dict['HOST'].strip()) == 0:
+        if not settings_dict['HOST'].strip():
             settings_dict['HOST'] = 'localhost'
-        if len(settings_dict['PORT'].strip()) != 0:
+        if settings_dict['PORT'].strip():
             dsn = Database.makedsn(settings_dict['HOST'],
                                    int(settings_dict['PORT']),
                                    settings_dict['NAME'])
@@ -366,6 +416,22 @@ class DatabaseWrapper(BaseDatabaseWrapper):
             cursor.execute("ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS' "
                            "NLS_TIMESTAMP_FORMAT = 'YYYY-MM-DD HH24:MI:SS.FF' "
                            "NLS_TERRITORY = 'AMERICA'")
+
+            if 'operators' not in self.__dict__:
+                # Ticket #14149: Check whether our LIKE implementation will
+                # work for this connection or we need to fall back on LIKEC.
+                # This check is performed only once per DatabaseWrapper
+                # instance per thread, since subsequent connections will use
+                # the same settings.
+                try:
+                    cursor.execute("SELECT 1 FROM DUAL WHERE DUMMY %s"
+                                   % self._standard_operators['contains'],
+                                   ['X'])
+                except utils.DatabaseError:
+                    self.operators = self._likec_operators
+                else:
+                    self.operators = self._standard_operators
+
             try:
                 self.oracle_version = int(self.connection.version.split('.')[0])
                 # There's no way for the DatabaseOperations class to know the
@@ -392,6 +458,28 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     # Oracle doesn't support savepoint commits.  Ignore them.
     def _savepoint_commit(self, sid):
         pass
+
+    def _commit(self):
+        if self.connection is not None:
+            try:
+                return self.connection.commit()
+            except Database.IntegrityError, e:
+                # In case cx_Oracle implements (now or in a future version)
+                # raising this specific exception
+                raise utils.IntegrityError, utils.IntegrityError(*tuple(e)), sys.exc_info()[2]
+            except Database.DatabaseError, e:
+                # cx_Oracle 5.0.4 raises a cx_Oracle.DatabaseError exception
+                # with the following attributes and values:
+                #  code = 2091
+                #  message = 'ORA-02091: transaction rolled back
+                #            'ORA-02291: integrity constraint (TEST_DJANGOTEST.SYS
+                #               _C00102056) violated - parent key not found'
+                # We convert that particular case to our IntegrityError exception
+                x = e.args[0]
+                if hasattr(x, 'code') and hasattr(x, 'message') \
+                   and x.code == 2091 and 'ORA-02291' in x.message:
+                    raise utils.IntegrityError, utils.IntegrityError(*tuple(e)), sys.exc_info()[2]
+                raise utils.DatabaseError, utils.DatabaseError(*tuple(e)), sys.exc_info()[2]
 
 
 class OracleParam(object):
@@ -641,19 +729,15 @@ def _get_sequence_reset_sql():
     # TODO: colorize this SQL code with style.SQL_KEYWORD(), etc.
     return """
 DECLARE
-    startvalue integer;
-    cval integer;
+    table_value integer;
+    seq_value integer;
 BEGIN
-    LOCK TABLE %(table)s IN SHARE MODE;
-    SELECT NVL(MAX(%(column)s), 0) INTO startvalue FROM %(table)s;
-    SELECT "%(sequence)s".nextval INTO cval FROM dual;
-    cval := startvalue - cval;
-    IF cval != 0 THEN
-        EXECUTE IMMEDIATE 'ALTER SEQUENCE "%(sequence)s" MINVALUE 0 INCREMENT BY '||cval;
-        SELECT "%(sequence)s".nextval INTO cval FROM dual;
-        EXECUTE IMMEDIATE 'ALTER SEQUENCE "%(sequence)s" INCREMENT BY 1';
-    END IF;
-    COMMIT;
+    SELECT NVL(MAX(%(column)s), 0) INTO table_value FROM %(table)s;
+    SELECT NVL(last_number - cache_size, 0) INTO seq_value FROM user_sequences
+           WHERE sequence_name = '%(sequence)s';
+    WHILE table_value > seq_value LOOP
+        SELECT "%(sequence)s".nextval INTO seq_value FROM dual;
+    END LOOP;
 END;
 /"""
 
