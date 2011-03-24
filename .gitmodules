@@ -22,3 +22,6 @@
 [submodule "src/pyes"]
 	path = src/pyes
 	url = git://github.com/aparo/pyes.git
+[submodule "src/nuggets"]
+	path = src/nuggets
+	url = git://github.com/mozilla/nuggets.git
