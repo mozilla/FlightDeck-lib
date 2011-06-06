@@ -24,4 +24,8 @@
 	url = git://github.com/aparo/pyes.git
 [submodule "src/nuggets"]
 	path = src/nuggets
-	url = git://github.com/mozilla/nuggets.git
+    url = git://github.com/mozilla/nuggets.git
+[submodule "src/elasticutils"]
+	path = src/elasticutils
+	url = git://github.com/davedash/elasticutils.git
+
