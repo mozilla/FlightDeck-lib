@@ -17,4 +17,5 @@ src/django-nose
 src/nuggets
 src/pyes
 src/python-ecdsa
+src/statsd
 src/test-utils
