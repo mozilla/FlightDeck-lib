@@ -32,3 +32,6 @@
 [submodule "src/statsd"]
 	path = src/statsd
 	url = git://github.com/jsocol/pystatsd.git
+[submodule "src/django-extensions"]
+	path = src/django-extensions
+	url = git://github.com/django-extensions/django-extensions
