@@ -35,3 +35,6 @@
 [submodule "src/django-extensions"]
 	path = src/django-extensions
 	url = git://github.com/django-extensions/django-extensions
+[submodule "src/django-piston"]
+	path = src/django-piston
+	url = git://github.com/mozilla/django-piston.git
