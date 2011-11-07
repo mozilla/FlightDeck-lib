@@ -38,3 +38,7 @@
 [submodule "src/waffle"]
 	path = src/waffle
 	url = git://github.com/jsocol/django-waffle.git
+
+[submodule "src/jingo"]
+	path = src/jingo
+	url = git://github.com/jbalogh/jingo.git

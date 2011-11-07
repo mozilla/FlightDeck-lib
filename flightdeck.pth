@@ -19,3 +19,4 @@ src/pyes
 src/python-ecdsa
 src/statsd
 src/test-utils
+src/jingo
