@@ -1,4 +1,5 @@
 *.py[co]
+*.pyc
 *.sw[po]
 .coverage
 pip-log.txt
