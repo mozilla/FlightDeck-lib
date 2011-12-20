@@ -44,4 +44,4 @@
 	url = git://github.com/jbalogh/jingo.git
 [submodule "src/django-browserid"]
 	path = src/django-browserid
-	url = https://github.com/mozilla/django-browserid/
+	url = git://github.com/mozilla/django-browserid.git

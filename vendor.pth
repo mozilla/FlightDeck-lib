@@ -1,3 +1,4 @@
 src/elasticutils
 src/jingo
 src/waffle
+src/django-browserid
