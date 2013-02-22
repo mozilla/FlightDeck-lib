@@ -1,4 +1,4 @@
-#!/home/zalun/Environment/flightdeck/bin/python2.6
+#!/home/zalun/Envs/flightdeck/bin/python
 from django.core import management
 
 if __name__ == "__main__":

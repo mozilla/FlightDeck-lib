@@ -1,0 +1,9 @@
+#!/home/zalun/Envs/flightdeck/bin/python
+# EASY-INSTALL-ENTRY-SCRIPT: 'celery==3.0.15','console_scripts','camqadm'
+__requires__ = 'celery==3.0.15'
+import sys
+from pkg_resources import load_entry_point
+
+sys.exit(
+   load_entry_point('celery==3.0.15', 'console_scripts', 'camqadm')()
+)
