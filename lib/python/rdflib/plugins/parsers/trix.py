@@ -43,12 +43,14 @@ from xml.sax.saxutils import handler
 from xml.sax import make_parser
 from xml.sax.handler import ErrorHandler
 
+__all__ = ['create_parser', 'TriXHandler', 'TriXParser']
+
 
 TRIXNS=Namespace("http://www.w3.org/2004/03/trix/trix-1/")
 XMLNS=Namespace("http://www.w3.org/XML/1998/namespace")
 
 class TriXHandler(handler.ContentHandler):
-    """An Sax Handler for TriX. See http://swdev.nokia.com/trix/TriX.html"""
+    """An Sax Handler for TriX. See http://sw.nokia.com/trix/"""
 
     def __init__(self, store):
         self.store = store
@@ -245,11 +247,15 @@ class TriXHandler(handler.ContentHandler):
         raise ParserError(info + message)
 
 
+
 def create_parser(store):
     parser = make_parser()
-    # Workaround for bug in expatreader.py. Needed when
-    # expatreader is trying to guess a prefix.
-    parser.start_namespace_decl("xml", "http://www.w3.org/XML/1998/namespace")
+    try:
+        # Workaround for bug in expatreader.py. Needed when
+        # expatreader is trying to guess a prefix.
+        parser.start_namespace_decl("xml", "http://www.w3.org/XML/1998/namespace")
+    except AttributeError:
+        pass # Not present in Jython (at least)
     parser.setFeature(handler.feature_namespaces, 1)
     trix = TriXHandler(store)
     parser.setContentHandler(trix)
@@ -258,13 +264,15 @@ def create_parser(store):
 
 
 class TriXParser(Parser):
-    """A parser for TriX. See http://swdev.nokia.com/trix/TriX.html"""
+    """A parser for TriX. See http://sw.nokia.com/trix/"""
 
     def __init__(self):
         pass
 
     def parse(self, source, sink, **args):
-        assert sink.store.context_aware
+        assert sink.store.context_aware, ("TriXParser must be given"
+                                          " a context aware store.")
+
         g=ConjunctiveGraph(store=sink.store)
         
         self._parser = create_parser(g)

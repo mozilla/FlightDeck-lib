@@ -6,6 +6,9 @@ from rdflib.namespace import Namespace
 
 from rdflib.graph import Graph, ConjunctiveGraph
 
+from rdflib.py3compat import b
+
+__all__ = ['TriXSerializer']
 
 ## TODO: MOve this somewhere central
 TRIXNS=Namespace("http://www.w3.org/2004/03/trix/trix-1/")
@@ -14,6 +17,9 @@ XMLNS=Namespace("http://www.w3.org/XML/1998/namespace")
 class TriXSerializer(Serializer):
     def __init__(self, store):
         super(TriXSerializer, self).__init__(store)
+        if not store.context_aware: 
+            raise Exception("TriX serialization only makes sense for context-aware stores!")
+
 
     def serialize(self, stream, base=None, encoding=None, **args):
 
@@ -33,7 +39,7 @@ class TriXSerializer(Serializer):
             raise Exception("Unknown graph type: "+type(self.store))
 
         self.writer.pop()
-        stream.write("\n")
+        stream.write(b("\n"))
         
 
     def _writeGraph(self, graph):

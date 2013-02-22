@@ -3,9 +3,12 @@ N-Triples RDF graph serializer for RDFLib.
 See <http://www.w3.org/TR/rdf-testcases/#ntriples> for details about the
 format.
 """
+from rdflib.term import Literal
 from rdflib.serializer import Serializer
+from rdflib.py3compat import b
 import warnings
 
+__all__ = ['NTSerializer']
 
 class NTSerializer(Serializer):
     """
@@ -20,31 +23,59 @@ class NTSerializer(Serializer):
         encoding = self.encoding
         for triple in self.store:
             stream.write(_nt_row(triple).encode(encoding, "replace"))
-        stream.write("\n")
+        stream.write(b("\n"))
 
 
 def _nt_row(triple):
-    return u"%s %s %s .\n" % (triple[0].n3(),
-            triple[1].n3(),
-            _xmlcharref_encode(triple[2].n3()))
+    if isinstance(triple[2], Literal): 
+        return u"%s %s %s .\n" % (triple[0].n3(),
+                                  triple[1].n3(),
+                              _xmlcharref_encode(_quoteLiteral(triple[2])))
+    else: 
+        return u"%s %s %s .\n" % (triple[0].n3(),
+                                  triple[1].n3(),
+                                  _xmlcharref_encode(triple[2].n3()))
+
+def _quoteLiteral(l): 
+    '''
+    a simpler version of term.Literal.n3()
+    '''
+
+    encoded = _quote_encode(l)
+
+    if l.language:
+        if l.datatype:
+            raise Exception("Literal has datatype AND language!")
+        return '%s@%s' % (encoded, l.language)
+    elif l.datatype:
+        return '%s^^<%s>' % (encoded, l.datatype)
+    else:
+        return '%s' % encoded
+
+def _quote_encode(l):
+    return '"%s"' % l.replace('\\', '\\\\')\
+        .replace('\n','\\n')\
+        .replace('"', '\\"')\
+        .replace('\r','\\r')
+
 
 # from <http://code.activestate.com/recipes/303668/>
 def _xmlcharref_encode(unicode_data, encoding="ascii"):
     """Emulate Python 2.3's 'xmlcharrefreplace' encoding error handler."""
-    chars = []
-
-    # nothing to do about xmlchars, but replace newlines with escapes: 
-    unicode_data=unicode_data.replace("\n","\\n")
-    if unicode_data.startswith('"""'):
-        unicode_data = unicode_data.replace('"""', '"')
+    res=""
 
     # Step through the unicode_data string one character at a time in
-    # order to catch unencodable characters:
+    # order to catch unencodable characters:                          
     for char in unicode_data:
         try:
-            chars.append(char.encode(encoding, 'strict'))
+            char.encode(encoding, 'strict')
         except UnicodeError:
-            chars.append('\u%04X' % ord(char) if ord(char) <= 0xFFFF else '\U%08X' % ord(char)) 
+            if ord(char) <= 0xFFFF:
+                res+='\\u%04X' % ord(char)
+            else:
+                res+='\\U%08X' % ord(char)
+        else:
+            res+=char
 
-    return ''.join(chars)
+    return res
 
