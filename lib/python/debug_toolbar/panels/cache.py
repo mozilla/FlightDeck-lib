@@ -3,9 +3,9 @@ import inspect
 
 from django.core import cache
 from django.core.cache.backends.base import BaseCache
-from django.template.loader import render_to_string
 from django.utils.translation import ugettext_lazy as _
 from debug_toolbar.panels import DebugPanel
+
 
 class CacheStatTracker(BaseCache):
     """A small class used to track cache calls."""
@@ -69,15 +69,17 @@ class CacheStatTracker(BaseCache):
                 self.hits += 1
         self.calls.append((this_time, 'get_many', (keys,), self._get_func_info()))
 
+
 class CacheDebugPanel(DebugPanel):
     """
     Panel that displays the cache statistics.
     """
     name = 'Cache'
+    template = 'debug_toolbar/panels/cache.html'
     has_content = True
 
     def __init__(self, *args, **kwargs):
-        super(self.__class__, self).__init__(*args, **kwargs)
+        super(CacheDebugPanel, self).__init__(*args, **kwargs)
         # This is hackish but to prevent threading issues is somewhat needed
         if isinstance(cache.cache, CacheStatTracker):
             cache.cache.reset()
@@ -95,11 +97,9 @@ class CacheDebugPanel(DebugPanel):
     def url(self):
         return ''
 
-    def content(self):
-        context = self.context.copy()
-        context.update({
+    def process_response(self, request, response):
+        self.record_stats({
             'cache_calls': len(self.cache.calls),
             'cache_time': self.cache.total_time,
             'cache': self.cache,
         })
-        return render_to_string('debug_toolbar/panels/cache.html', context)
